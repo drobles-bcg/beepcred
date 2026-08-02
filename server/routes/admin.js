@@ -760,23 +760,202 @@ router.delete('/plates/:id', async (req, res, next) => {
 router.get('/comments', async (req, res, next) => {
   try {
     const filter = req.query.filter || 'flagged';
+    const q = req.query.q ? String(req.query.q).trim() : '';
     const where = {};
-    if (filter === 'flagged') where.is_flagged = true;
-    else if (filter === 'deleted') where.is_deleted = true;
+    if (filter === 'flagged') {
+      where.is_flagged = true;
+      where.is_deleted = false;
+    } else if (filter === 'deleted') {
+      where.is_deleted = true;
+    } else if (filter === 'active') {
+      where.is_deleted = false;
+    } else if (filter !== 'all') {
+      return res.status(400).json({ error: 'Invalid filter' });
+    }
+    if (q) {
+      const term = `%${q}%`;
+      where[Op.or] = [{ body: { [Op.like]: term } }];
+    }
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const offset = (page - 1) * limit;
     const { count, rows } = await Comment.findAndCountAll({
       where,
       include: [
-        { model: User, as: 'author', attributes: ['id', 'username'] },
-        { model: LicensePlate, as: 'plate', attributes: ['id', 'slug', 'state', 'plate_number'] },
+        { model: User, as: 'author', attributes: ['id', 'username', 'email', 'display_name'] },
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'slug', 'state', 'plate_number', 'display_plate_text'],
+        },
       ],
       order: [['created_at', 'DESC']],
       limit,
       offset,
     });
-    res.json({ comments: rows, page, limit, total: count });
+
+    const [flagged, deleted, active, all] = await Promise.all([
+      Comment.count({ where: { is_flagged: true, is_deleted: false } }),
+      Comment.count({ where: { is_deleted: true } }),
+      Comment.count({ where: { is_deleted: false } }),
+      Comment.count(),
+    ]);
+
+    res.json({
+      comments: rows,
+      page,
+      limit,
+      total: count,
+      counts: { flagged, deleted, active, all },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/comments', async (req, res, next) => {
+  try {
+    const { plate_id, body, user_id, parent_id } = req.body || {};
+    if (!plate_id || !isUUID(String(plate_id))) {
+      return res.status(400).json({ error: 'Valid plate_id required' });
+    }
+    if (!body || !String(body).trim()) {
+      return res.status(400).json({ error: 'body required' });
+    }
+    const plate = await LicensePlate.findByPk(plate_id);
+    if (!plate) return res.status(404).json({ error: 'Plate not found' });
+
+    let authorId = req.session.userId;
+    if (user_id) {
+      if (!isUUID(String(user_id))) return res.status(400).json({ error: 'Invalid user_id' });
+      const author = await User.findByPk(user_id);
+      if (!author) return res.status(404).json({ error: 'User not found' });
+      authorId = author.id;
+    }
+
+    let parentId = null;
+    if (parent_id) {
+      if (!isUUID(String(parent_id))) return res.status(400).json({ error: 'Invalid parent_id' });
+      const parent = await Comment.findByPk(parent_id);
+      if (!parent || parent.plate_id !== plate.id) {
+        return res.status(400).json({ error: 'Invalid parent comment' });
+      }
+      if (parent.parent_id) {
+        return res.status(400).json({ error: 'Only one level of replies' });
+      }
+      parentId = parent.id;
+    }
+
+    const comment = await Comment.create({
+      plate_id: plate.id,
+      user_id: authorId,
+      parent_id: parentId,
+      body: String(body).trim().slice(0, 5000),
+      is_deleted: false,
+      is_flagged: false,
+    });
+    await plate.update({ comment_count: (plate.comment_count || 0) + 1 });
+    const author = await User.findByPk(authorId);
+    if (author) await author.update({ comment_count: (author.comment_count || 0) + 1 });
+
+    const full = await Comment.findByPk(comment.id, {
+      include: [
+        { model: User, as: 'author', attributes: ['id', 'username', 'email', 'display_name'] },
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'slug', 'state', 'plate_number', 'display_plate_text'],
+        },
+      ],
+    });
+    res.status(201).json({ comment: full });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/comments/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
+    const comment = await Comment.findByPk(id);
+    if (!comment) return res.status(404).json({ error: 'Not found' });
+
+    const { body, is_flagged, is_deleted } = req.body || {};
+    const updates = {};
+
+    if (body !== undefined) {
+      const text = String(body).trim();
+      if (!text) return res.status(400).json({ error: 'body required' });
+      updates.body = text.slice(0, 5000);
+    }
+    if (is_flagged !== undefined) updates.is_flagged = Boolean(is_flagged);
+
+    if (is_deleted !== undefined) {
+      const nextDeleted = Boolean(is_deleted);
+      if (nextDeleted !== Boolean(comment.is_deleted)) {
+        const plate = await LicensePlate.findByPk(comment.plate_id);
+        const author = await User.findByPk(comment.user_id);
+        if (nextDeleted) {
+          if (plate) await plate.update({ comment_count: Math.max(0, (plate.comment_count || 0) - 1) });
+          if (author) await author.update({ comment_count: Math.max(0, (author.comment_count || 0) - 1) });
+        } else {
+          if (plate) await plate.update({ comment_count: (plate.comment_count || 0) + 1 });
+          if (author) await author.update({ comment_count: (author.comment_count || 0) + 1 });
+        }
+        updates.is_deleted = nextDeleted;
+      }
+    }
+
+    if (Object.keys(updates).length) await comment.update(updates);
+
+    const full = await Comment.findByPk(id, {
+      include: [
+        { model: User, as: 'author', attributes: ['id', 'username', 'email', 'display_name'] },
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'slug', 'state', 'plate_number', 'display_plate_text'],
+        },
+      ],
+    });
+    res.json({ comment: full });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/comments/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
+    const comment = await Comment.findByPk(id);
+    if (!comment) return res.status(404).json({ error: 'Not found' });
+
+    const hard = req.query.hard === '1' || req.query.hard === 'true' || req.body?.hard === true;
+
+    if (hard) {
+      if (!comment.is_deleted) {
+        const plate = await LicensePlate.findByPk(comment.plate_id);
+        const author = await User.findByPk(comment.user_id);
+        if (plate) await plate.update({ comment_count: Math.max(0, (plate.comment_count || 0) - 1) });
+        if (author) await author.update({ comment_count: Math.max(0, (author.comment_count || 0) - 1) });
+      }
+      // Soft-delete replies first if hard-deleting a parent, then destroy
+      await Comment.destroy({ where: { parent_id: id } });
+      await Report.destroy({ where: { content_type: 'comment', content_id: id } });
+      await comment.destroy();
+      return res.json({ ok: true, hard: true });
+    }
+
+    if (!comment.is_deleted) {
+      const plate = await LicensePlate.findByPk(comment.plate_id);
+      const author = await User.findByPk(comment.user_id);
+      if (plate) await plate.update({ comment_count: Math.max(0, (plate.comment_count || 0) - 1) });
+      if (author) await author.update({ comment_count: Math.max(0, (author.comment_count || 0) - 1) });
+      await comment.update({ is_deleted: true, is_flagged: true });
+    }
+    res.json({ ok: true, hard: false });
   } catch (e) {
     next(e);
   }

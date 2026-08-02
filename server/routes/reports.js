@@ -1,5 +1,5 @@
 const express = require('express');
-const { Report } = require('../db');
+const { Report, Comment } = require('../db');
 const { requireAuth } = require('../middleware/requireAuth');
 const { isUUID } = require('../lib/uuid');
 
@@ -45,6 +45,14 @@ router.post('/', requireAuth, async (req, res, next) => {
       notes: notes ? String(notes).slice(0, 2000) : null,
       status: 'pending',
     });
+
+    if (content_type === 'comment') {
+      const comment = await Comment.findByPk(content_id);
+      if (comment && !comment.is_deleted) {
+        await comment.update({ is_flagged: true });
+      }
+    }
+
     res.status(201).json({ report });
   } catch (e) {
     next(e);
