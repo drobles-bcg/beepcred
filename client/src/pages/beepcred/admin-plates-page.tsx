@@ -26,19 +26,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-const BODY_TYPES = [
-  'sedan',
-  'suv',
-  'truck',
-  'coupe',
-  'convertible',
-  'minivan',
-  'wagon',
-  'hatchback',
-  'van',
-  'other',
-] as const;
+import {
+  BODY_TYPES,
+  SHOT_TYPES,
+  createPlateWithImage,
+} from '@/lib/create-plate';
 
 type AdminPlate = {
   id: string;
@@ -77,6 +69,9 @@ type PlateFormState = {
   color: string;
   body_type: string;
   cred_score: string;
+  caption: string;
+  shot_type: string;
+  city: string;
 };
 
 const emptyForm = (): PlateFormState => ({
@@ -90,6 +85,9 @@ const emptyForm = (): PlateFormState => ({
   color: '',
   body_type: 'other',
   cred_score: '0',
+  caption: '',
+  shot_type: 'plate',
+  city: '',
 });
 
 function formFromPlate(p: AdminPlate): PlateFormState {
@@ -104,6 +102,9 @@ function formFromPlate(p: AdminPlate): PlateFormState {
     color: p.color || '',
     body_type: p.body_type || 'other',
     cred_score: String(p.cred_score ?? 0),
+    caption: '',
+    shot_type: 'plate',
+    city: '',
   };
 }
 
@@ -136,6 +137,7 @@ export function AdminPlatesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AdminPlate | null>(null);
   const [form, setForm] = useState<PlateFormState>(emptyForm());
+  const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AdminPlate | null>(null);
 
@@ -158,30 +160,70 @@ export function AdminPlatesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
-        plate_number: form.plate_number,
-        display_plate_text: form.display_plate_text || form.plate_number,
-        state: form.state,
-        country: form.country || 'US',
-        make: form.make || null,
-        model: form.model || null,
-        year: form.year || null,
-        color: form.color || null,
-        body_type: form.body_type || 'other',
-        cred_score: form.cred_score,
-      };
       if (editing) {
+        const payload = {
+          plate_number: form.plate_number,
+          display_plate_text: form.display_plate_text || form.plate_number,
+          state: form.state,
+          country: form.country || 'US',
+          make: form.make || null,
+          model: form.model || null,
+          year: form.year || null,
+          color: form.color || null,
+          body_type: form.body_type || 'other',
+          cred_score: form.cred_score,
+        };
         const { data } = await api.put(`/api/admin/plates/${editing.id}`, payload);
+        if (file) {
+          const fd = new FormData();
+          fd.append('image', file);
+          if (form.caption) fd.append('caption', form.caption);
+          fd.append('shot_type', form.shot_type || 'plate');
+          if (form.city) fd.append('city', form.city);
+          await api.post(`/api/plates/${editing.id}/images`, fd, {
+            headers: { 'Content-Type': undefined as unknown as string },
+          });
+        }
         return data.plate as AdminPlate;
       }
-      const { data } = await api.post('/api/admin/plates', payload);
-      return data.plate as AdminPlate;
+
+      if (!file) throw new Error('Pick an image');
+
+      const { plate } = await createPlateWithImage(
+        {
+          state: form.state,
+          plate_number: form.plate_number,
+          country: form.country || 'US',
+          display_plate_text: form.display_plate_text || undefined,
+          make: form.make,
+          model: form.model,
+          year: form.year,
+          color: form.color,
+          body_type: form.body_type || 'other',
+        },
+        {
+          file,
+          caption: form.caption,
+          shot_type: form.shot_type,
+          city: form.city,
+        },
+      );
+
+      // Admin-only field after shared create
+      const cred = parseInt(form.cred_score, 10);
+      if (Number.isFinite(cred) && cred !== 0) {
+        const { data } = await api.put(`/api/admin/plates/${plate.id}`, { cred_score: cred });
+        return data.plate as AdminPlate;
+      }
+
+      return plate as unknown as AdminPlate;
     },
     onSuccess: async () => {
       setFormError('');
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm());
+      setFile(null);
       await qc.invalidateQueries({ queryKey: ['admin', 'plates'] });
     },
     onError: (err) => setFormError(apiErrorMessage(err, 'Could not save plate')),
@@ -200,6 +242,7 @@ export function AdminPlatesPage() {
   function openCreate() {
     setEditing(null);
     setForm(emptyForm());
+    setFile(null);
     setFormError('');
     setDialogOpen(true);
   }
@@ -207,6 +250,7 @@ export function AdminPlatesPage() {
   function openEdit(p: AdminPlate) {
     setEditing(p);
     setForm(formFromPlate(p));
+    setFile(null);
     setFormError('');
     setDialogOpen(true);
   }
@@ -346,17 +390,40 @@ export function AdminPlatesPage() {
         </div>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setFile(null);
+            setFormError('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit plate' : 'Create plate'}</DialogTitle>
             <DialogDescription>
               {editing
                 ? `Update ${editing.state} ${editing.plate_number}`
-                : 'Add a license plate record to the database.'}
+                : 'Uses the same create flow as user submit: plate record + photo upload.'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="plate-photo">
+                Photo{editing ? ' (optional — adds another image)' : ''}
+              </Label>
+              <Input
+                id="plate-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+              {file && (
+                <p className="text-xs text-muted-foreground truncate">{file.name}</p>
+              )}
+            </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plate-state">State</Label>
@@ -459,6 +526,43 @@ export function AdminPlatesPage() {
                 />
               </div>
             </div>
+            {(file || !editing) && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="plate-shot">Shot type</Label>
+                  <select
+                    id="plate-shot"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm capitalize"
+                    value={form.shot_type}
+                    onChange={(e) => setForm((f) => ({ ...f, shot_type: e.target.value }))}
+                  >
+                    {SHOT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="plate-city">City (optional)</Label>
+                  <Input
+                    id="plate-city"
+                    value={form.city}
+                    onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+            {(file || !editing) && (
+              <div className="space-y-1.5">
+                <Label htmlFor="plate-caption">Caption (optional)</Label>
+                <Input
+                  id="plate-caption"
+                  value={form.caption}
+                  onChange={(e) => setForm((f) => ({ ...f, caption: e.target.value }))}
+                />
+              </div>
+            )}
             {formError && <p className="text-sm text-destructive">{formError}</p>}
           </DialogBody>
           <DialogFooter>
@@ -470,7 +574,8 @@ export function AdminPlatesPage() {
               disabled={
                 saveMutation.isPending ||
                 form.state.trim().length !== 2 ||
-                !form.plate_number.trim()
+                !form.plate_number.trim() ||
+                (!editing && !file)
               }
             >
               {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create plate'}

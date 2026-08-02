@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
-import { api } from '@/api/http';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,13 +14,12 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Helmet } from 'react-helmet-async';
-
-const US_STATES = [
-  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
-  'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT',
-  'VA', 'WA', 'WV', 'WI', 'WY', 'DC',
-];
+import {
+  BODY_TYPES,
+  SHOT_TYPES,
+  US_STATES,
+  createPlateWithImage,
+} from '@/lib/create-plate';
 
 export function SubmitPage() {
   const navigate = useNavigate();
@@ -40,26 +38,21 @@ export function SubmitPage() {
   const submit = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error('Pick an image');
-      const { data: plateRes } = await api.post('/api/plates', {
-        state,
-        plate_number: plateNumber,
-        country: 'US',
-        make: make || undefined,
-        model: model || undefined,
-        year: year ? parseInt(year, 10) : undefined,
-        color: color || undefined,
-        body_type: bodyType,
-      });
-      const plateId = plateRes.plate.id;
-      const fd = new FormData();
-      fd.append('image', file);
-      fd.append('caption', caption);
-      fd.append('shot_type', shotType);
-      if (city) fd.append('city', city);
-      await api.post(`/api/plates/${plateId}/images`, fd);
-      const p = plateRes.plate as { state: string; plate_number: string; display_plate_text?: string | null };
-      const routePlate = p.display_plate_text || p.plate_number;
-      navigate(`/plate/${p.state.toLowerCase()}/${encodeURIComponent(routePlate)}`);
+      const { plate } = await createPlateWithImage(
+        {
+          state,
+          plate_number: plateNumber,
+          country: 'US',
+          make,
+          model,
+          year,
+          color,
+          body_type: bodyType,
+        },
+        { file, caption, shot_type: shotType, city },
+      );
+      const routePlate = (plate.display_plate_text as string) || plate.plate_number;
+      navigate(`/plate/${plate.state.toLowerCase()}/${encodeURIComponent(routePlate)}`);
     },
   });
 
@@ -123,19 +116,35 @@ export function SubmitPage() {
                 <Input value={color} onChange={(e) => setColor(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Shot type</Label>
-                <Select value={shotType} onValueChange={setShotType}>
+                <Label>Body type</Label>
+                <Select value={bodyType} onValueChange={setBodyType}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="plate">Plate</SelectItem>
-                    <SelectItem value="front">Front</SelectItem>
-                    <SelectItem value="rear">Rear</SelectItem>
-                    <SelectItem value="side">Side</SelectItem>
+                    {BODY_TYPES.map((t) => (
+                      <SelectItem key={t} value={t} className="capitalize">
+                        {t}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Shot type</Label>
+              <Select value={shotType} onValueChange={setShotType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHOT_TYPES.map((t) => (
+                    <SelectItem key={t} value={t} className="capitalize">
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Caption</Label>
@@ -148,7 +157,7 @@ export function SubmitPage() {
             {submit.isError && (
               <p className="text-sm text-destructive">{(submit.error as Error)?.message || 'Failed'}</p>
             )}
-            <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
+            <Button onClick={() => submit.mutate()} disabled={submit.isPending || !file || !plateNumber.trim()}>
               {submit.isPending ? 'Submitting…' : 'Submit'}
             </Button>
           </CardContent>
