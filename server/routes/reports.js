@@ -59,4 +59,21 @@ router.post('/', requireAuth, async (req, res, next) => {
   }
 });
 
+router.get('/mine', requireAuth, async (req, res, next) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+    const { count, rows } = await Report.findAndCountAll({
+      where: { reported_by: req.session.userId },
+      order: [['created_at', 'DESC']],
+      limit,
+      offset,
+    });
+    res.json({ reports: rows, page, limit, total: count });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;

@@ -42,6 +42,19 @@ export function UserProfilePage() {
     enabled: !!userQ.data,
   });
 
+  const commentsQ = useQuery({
+    queryKey: ['user', username, 'comments'],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/users/${encodeURIComponent(username)}/comments`);
+      return data.comments as Array<{
+        id: string;
+        body: string;
+        plate?: { state: string; plate_number: string; display_plate_text?: string | null };
+      }>;
+    },
+    enabled: !!userQ.data,
+  });
+
   if (userQ.isLoading) return <p className="p-6">Loading…</p>;
   if (userQ.isError || !userQ.data) return <p className="p-6">User not found</p>;
 
@@ -101,7 +114,28 @@ export function UserProfilePage() {
             </div>
           </TabsContent>
           <TabsContent value="comments">
-            <p className="text-sm text-muted-foreground">Open API comments list — use activity tab in a follow-up</p>
+            {commentsQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {!commentsQ.isLoading && (commentsQ.data || []).length === 0 && (
+              <p className="text-sm text-muted-foreground">No comments yet.</p>
+            )}
+            <ul className="space-y-3">
+              {(commentsQ.data || []).map((c) => {
+                const p = c.plate;
+                const href = p
+                  ? `/plate/${encodeURIComponent(p.state)}/${encodeURIComponent(p.display_plate_text || p.plate_number)}`
+                  : null;
+                return (
+                  <li key={c.id} className="rounded-lg border border-border p-3 text-sm">
+                    {href && p ? (
+                      <Link to={href} className="text-xs font-medium text-primary hover:underline">
+                        {p.state} {p.display_plate_text || p.plate_number}
+                      </Link>
+                    ) : null}
+                    <p className="mt-1 whitespace-pre-wrap">{c.body}</p>
+                  </li>
+                );
+              })}
+            </ul>
           </TabsContent>
         </Tabs>
       </div>

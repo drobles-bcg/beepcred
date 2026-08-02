@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -8,10 +8,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { canAccessAdmin } from '@/lib/admin-access';
 import { useAuth } from '@/providers/auth-provider';
 
 export function BeepCredUserMenu() {
   const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (loading) {
     return <span className="text-sm text-muted-foreground">…</span>;
@@ -40,19 +42,34 @@ export function BeepCredUserMenu() {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="w-56">
         <div className="px-2 py-1.5 text-sm">
-          <p className="font-medium">@{user.username}</p>
-          <p className="text-xs text-muted-foreground">cred {user.cred_score}</p>
+          <p className="font-medium">{user.display_name || `@${user.username}`}</p>
+          <p className="text-xs text-muted-foreground">@{user.username} · cred {user.cred_score}</p>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to={`/user/${user.username}`}>Profile</Link>
+          <Link to="/account/profile">Edit profile</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/submissions">My submissions</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/ratings">My ratings</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/comments">My comments</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/account/reports">My reports</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to={`/user/${encodeURIComponent(user.username)}`}>Public profile</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/submit">Submit plate</Link>
         </DropdownMenuItem>
-        {(user.role === 'admin' || user.role === 'moderator') && (
+        {canAccessAdmin(user) && (
           <DropdownMenuItem asChild>
             <Link to="/admin">Admin</Link>
           </DropdownMenuItem>
@@ -60,10 +77,10 @@ export function BeepCredUserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => {
-            void logout();
+            void logout().then(() => navigate('/login'));
           }}
         >
-          Log out
+          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

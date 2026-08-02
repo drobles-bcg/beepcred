@@ -105,6 +105,13 @@ router.get('/:username/comments', async (req, res, next) => {
     const offset = (page - 1) * limit;
     const { count, rows } = await Comment.findAndCountAll({
       where: { user_id: user.id, is_deleted: false },
+      include: [
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'slug', 'state', 'plate_number', 'display_plate_text'],
+        },
+      ],
       order: [['created_at', 'DESC']],
       limit,
       offset,

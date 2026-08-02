@@ -20,6 +20,13 @@ import { PurchasePage } from '@/pages/beepcred/purchase-page';
 import { FaqPage } from '@/pages/beepcred/faq-page';
 import { SupportPage } from '@/pages/beepcred/support-page';
 import { LicensePage } from '@/pages/beepcred/license-page';
+import { AccountLayout } from '@/pages/beepcred/account/account-layout';
+import { AccountProfilePage } from '@/pages/beepcred/account/account-profile-page';
+import { AccountNotificationsPage } from '@/pages/beepcred/account/account-notifications-page';
+import { AccountSubmissionsPage } from '@/pages/beepcred/account/account-submissions-page';
+import { AccountRatingsPage } from '@/pages/beepcred/account/account-ratings-page';
+import { AccountCommentsPage } from '@/pages/beepcred/account/account-comments-page';
+import { AccountReportsPage } from '@/pages/beepcred/account/account-reports-page';
 
 export function AppRoutingSetup() {
   return (
@@ -40,6 +47,15 @@ export function AppRoutingSetup() {
 
         <Route element={<RequireAuth />}>
           <Route path="/submit" element={<SubmitPage />} />
+          <Route path="/account" element={<AccountLayout />}>
+            <Route index element={<Navigate to="profile" replace />} />
+            <Route path="profile" element={<AccountProfilePage />} />
+            <Route path="notifications" element={<AccountNotificationsPage />} />
+            <Route path="submissions" element={<AccountSubmissionsPage />} />
+            <Route path="ratings" element={<AccountRatingsPage />} />
+            <Route path="comments" element={<AccountCommentsPage />} />
+            <Route path="reports" element={<AccountReportsPage />} />
+          </Route>
         </Route>
 
         <Route element={<RequireAdmin />}>

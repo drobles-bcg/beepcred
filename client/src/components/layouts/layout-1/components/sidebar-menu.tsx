@@ -2,7 +2,7 @@
 
 import { JSX, useCallback, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MENU_SIDEBAR } from '@/config/layout-1.config';
+import { MENU_SIDEBAR, getAccountSidebarChildren } from '@/config/layout-1.config';
 import { MenuConfig, MenuItem } from '@/config/types';
 import { canAccessAdmin } from '@/lib/admin-access';
 import { cn } from '@/lib/utils';
@@ -25,8 +25,25 @@ export function SidebarMenu() {
   const { user } = useAuth();
 
   const menuItems = useMemo(() => {
-    if (canAccessAdmin(user)) return MENU_SIDEBAR;
-    return MENU_SIDEBAR.filter((item) => item.title !== 'Admin');
+    const items = MENU_SIDEBAR.map((item) => {
+      if (item.title !== 'Profile') return item;
+      if (user) {
+        return {
+          ...item,
+          title: user.display_name || user.username,
+          children: getAccountSidebarChildren(user.username),
+        };
+      }
+      return {
+        ...item,
+        children: [
+          { title: 'Sign in', path: '/login' },
+          { title: 'Create account', path: '/register' },
+        ],
+      };
+    });
+    if (canAccessAdmin(user)) return items;
+    return items.filter((item) => item.title !== 'Admin');
   }, [user]);
 
   // Memoize matchPath to prevent unnecessary re-renders

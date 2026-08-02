@@ -60,10 +60,14 @@ export const MENU_SIDEBAR: MenuConfig = [
     ],
   },
   { heading: 'Account' },
+  // Profile children are replaced at runtime in SidebarMenu based on auth
   {
     title: 'Profile',
     icon: UserCircle,
-    children: [{ title: 'Sign in', path: '/login' }],
+    children: [
+      { title: 'Sign in', path: '/login' },
+      { title: 'Create account', path: '/register' },
+    ],
   },
   {
     title: 'Admin',
@@ -78,6 +82,21 @@ export const MENU_SIDEBAR: MenuConfig = [
     ],
   },
 ];
+
+/** Logged-in account nav (Carfax-style sections, adapted for BeepCred). */
+export function getAccountSidebarChildren(username: string): MenuConfig {
+  return [
+    { title: 'Edit profile', path: '/account/profile' },
+    { title: 'Notifications', path: '/account/notifications' },
+    { title: 'My submissions', path: '/account/submissions' },
+    { title: 'My ratings', path: '/account/ratings' },
+    { title: 'My comments', path: '/account/comments' },
+    { title: 'My reports', path: '/account/reports' },
+    { title: 'My garage', path: '/account/garage', disabled: true },
+    { title: 'Following', path: '/account/following', disabled: true },
+    { title: 'Public profile', path: `/user/${encodeURIComponent(username)}` },
+  ];
+}
 
 export const MENU_MEGA: MenuConfig = [
   { title: 'Home', path: '/' },
