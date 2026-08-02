@@ -4,9 +4,9 @@ const {
   User,
   LicensePlate,
   PlateImage,
+  PlateVote,
   Report,
   Comment,
-  sequelize,
 } = require('../db');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireAdmin } = require('../middleware/requireAdmin');
@@ -299,15 +299,22 @@ router.put('/images/:id', async (req, res, next) => {
   }
 });
 
-/** Admin plate list */
+/** Admin plate list + CRUD */
 router.get('/plates', async (req, res, next) => {
   try {
     const q = req.query.q;
+    const state = req.query.state ? String(req.query.state).trim().toUpperCase() : '';
     const where = {};
+    if (state) where.state = state;
     if (q) {
+      const term = `%${q}%`;
       where[Op.or] = [
-        { plate_number: { [Op.like]: `%${q}%` } },
-        { make: { [Op.like]: `%${q}%` } },
+        { plate_number: { [Op.like]: term } },
+        { display_plate_text: { [Op.like]: term } },
+        { make: { [Op.like]: term } },
+        { model: { [Op.like]: term } },
+        { slug: { [Op.like]: term } },
+        { color: { [Op.like]: term } },
       ];
     }
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -315,11 +322,171 @@ router.get('/plates', async (req, res, next) => {
     const offset = (page - 1) * limit;
     const { count, rows } = await LicensePlate.findAndCountAll({
       where,
+      include: [
+        {
+          model: PlateImage,
+          as: 'primaryImage',
+          required: false,
+          attributes: ['id', 'url', 'thumb_url', 'is_approved'],
+        },
+      ],
       order: [['created_at', 'DESC']],
       limit,
       offset,
     });
     res.json({ plates: rows, page, limit, total: count });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/plates', async (req, res, next) => {
+  try {
+    const {
+      normalizePlateNumber,
+      normalizeDisplayPlateText,
+      normalizeState,
+      buildSlug,
+    } = require('../lib/plateUtils');
+    const {
+      plate_number,
+      display_plate_text,
+      state,
+      country = 'US',
+      make,
+      model,
+      year,
+      color,
+      body_type = 'other',
+    } = req.body || {};
+
+    const num = normalizePlateNumber(plate_number);
+    const st = normalizeState(state);
+    if (!num || st.length !== 2) {
+      return res.status(400).json({ error: 'Valid plate_number and 2-letter state required' });
+    }
+    const slug = buildSlug(st, num);
+    const existing = await LicensePlate.findOne({ where: { slug } });
+    if (existing) {
+      return res.status(409).json({ error: 'Plate already exists for that state/number' });
+    }
+
+    const allowedBody = LicensePlate.BODY_TYPES || [];
+    const bodyType = allowedBody.includes(body_type) ? body_type : 'other';
+    const yearNum = year === '' || year === null || year === undefined ? null : parseInt(year, 10);
+
+    const plate = await LicensePlate.create({
+      plate_number: num,
+      display_plate_text: normalizeDisplayPlateText(display_plate_text) || num,
+      state: st,
+      country: String(country || 'US').toUpperCase().slice(0, 8),
+      slug,
+      make: make || null,
+      model: model || null,
+      year: Number.isFinite(yearNum) ? yearNum : null,
+      color: color || null,
+      body_type: bodyType,
+      first_seen_at: new Date(),
+      last_seen_at: new Date(),
+    });
+    res.status(201).json({ plate });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/plates/:id', async (req, res, next) => {
+  try {
+    const {
+      normalizePlateNumber,
+      normalizeDisplayPlateText,
+      normalizeState,
+      buildSlug,
+    } = require('../lib/plateUtils');
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
+    const plate = await LicensePlate.findByPk(id);
+    if (!plate) return res.status(404).json({ error: 'Not found' });
+
+    const {
+      plate_number,
+      display_plate_text,
+      state,
+      country,
+      make,
+      model,
+      year,
+      color,
+      body_type,
+      cred_score,
+    } = req.body || {};
+
+    const updates = {};
+    if (plate_number !== undefined || state !== undefined) {
+      const num = normalizePlateNumber(plate_number !== undefined ? plate_number : plate.plate_number);
+      const st = normalizeState(state !== undefined ? state : plate.state);
+      if (!num || st.length !== 2) {
+        return res.status(400).json({ error: 'Valid plate_number and 2-letter state required' });
+      }
+      const slug = buildSlug(st, num);
+      if (slug !== plate.slug) {
+        const conflict = await LicensePlate.findOne({
+          where: { slug, id: { [Op.ne]: id } },
+        });
+        if (conflict) {
+          return res.status(409).json({ error: 'Plate already exists for that state/number' });
+        }
+      }
+      updates.plate_number = num;
+      updates.state = st;
+      updates.slug = slug;
+    }
+    if (display_plate_text !== undefined) {
+      updates.display_plate_text =
+        normalizeDisplayPlateText(display_plate_text) || updates.plate_number || plate.plate_number;
+    }
+    if (country !== undefined) updates.country = String(country || 'US').toUpperCase().slice(0, 8);
+    if (make !== undefined) updates.make = make || null;
+    if (model !== undefined) updates.model = model || null;
+    if (color !== undefined) updates.color = color || null;
+    if (year !== undefined) {
+      if (year === '' || year === null) updates.year = null;
+      else {
+        const yearNum = parseInt(year, 10);
+        updates.year = Number.isFinite(yearNum) ? yearNum : null;
+      }
+    }
+    if (body_type !== undefined) {
+      const allowedBody = LicensePlate.BODY_TYPES || [];
+      updates.body_type = allowedBody.includes(body_type) ? body_type : plate.body_type;
+    }
+    if (cred_score !== undefined) {
+      const score = parseInt(cred_score, 10);
+      if (Number.isFinite(score)) updates.cred_score = score;
+    }
+    updates.last_seen_at = new Date();
+
+    await plate.update(updates);
+    res.json({ plate });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/plates/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
+    const plate = await LicensePlate.findByPk(id);
+    if (!plate) return res.status(404).json({ error: 'Not found' });
+
+    await LicensePlate.update({ primary_image_id: null }, { where: { id } });
+    await PlateImage.destroy({ where: { plate_id: id } });
+    await Comment.destroy({ where: { plate_id: id } });
+    await PlateVote.destroy({ where: { plate_id: id } });
+    await Report.destroy({ where: { content_type: 'plate', content_id: id } });
+    await plate.destroy();
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
