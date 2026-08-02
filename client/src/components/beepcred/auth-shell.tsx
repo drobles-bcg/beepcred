@@ -7,8 +7,8 @@ type AuthShellProps = {
 /** Full-viewport centered auth layout (login/register sit outside Layout1). */
 export function AuthShell({ children }: AuthShellProps) {
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background">
-      <header className="flex w-full items-center justify-center border-b border-border px-4 py-4">
+    <div className="flex min-h-dvh w-full flex-col bg-background">
+      <header className="flex w-full shrink-0 items-center justify-center border-b border-border px-4 py-4">
         <Link to="/" className="text-lg font-semibold tracking-tight text-foreground no-underline">
           BeepCred
         </Link>

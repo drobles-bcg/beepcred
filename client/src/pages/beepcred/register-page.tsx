@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { api } from '@/api/http';
 import { AuthShell } from '@/components/beepcred/auth-shell';
-import { GoogleAuthButton } from '@/components/beepcred/google-auth-button';
+import { GoogleAuthSection } from '@/components/beepcred/google-auth-section';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -79,19 +79,11 @@ export function RegisterPage() {
             <CardDescription>Join the road reputation community</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <GoogleAuthButton
+            <GoogleAuthSection
               onCredential={onGoogleCredential}
               disabled={googleLogin.isPending || reg.isPending}
               label="Continue with Google"
             />
-            <div className="relative py-1">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">or</span>
-              </div>
-            </div>
             <div className="space-y-2">
               <Label htmlFor="u">Username</Label>
               <Input id="u" value={username} onChange={(e) => setUsername(e.target.value)} />

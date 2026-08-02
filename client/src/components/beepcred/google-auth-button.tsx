@@ -65,12 +65,10 @@ export function GoogleAuthButton({
   label = 'Sign in with Google',
 }: GoogleAuthButtonProps) {
   const btnRef = useRef<HTMLDivElement>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const [ready, setReady] = useState(false);
-
   const onCredentialRef = useRef(onCredential);
   onCredentialRef.current = onCredential;
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -79,12 +77,12 @@ export function GoogleAuthButton({
         const { data } = await api.get<{ enabled: boolean; clientId?: string }>('/api/auth/google/config');
         if (cancelled) return;
         if (!data.enabled || !data.clientId) {
-          setClientId(null);
+          setError('Google sign-in unavailable');
           return;
         }
-        setClientId(data.clientId);
         await loadGsiScript();
         if (cancelled || !btnRef.current || !window.google) return;
+        btnRef.current.innerHTML = '';
         window.google.accounts.id.initialize({
           client_id: data.clientId,
           callback: (response) => {
@@ -93,7 +91,7 @@ export function GoogleAuthButton({
           auto_select: false,
           cancel_on_tap_outside: true,
         });
-        const width = Math.min(360, btnRef.current.offsetWidth || 320);
+        const width = Math.min(360, Math.max(280, btnRef.current.offsetWidth || 320));
         window.google.accounts.id.renderButton(btnRef.current, {
           theme: 'outline',
           size: 'large',
@@ -111,17 +109,16 @@ export function GoogleAuthButton({
     };
   }, []);
 
-  if (clientId === null && !error) {
-    return null;
-  }
-
   if (error) {
     return <p className="text-center text-sm text-muted-foreground">{error}</p>;
   }
 
   return (
     <div className="space-y-2">
-      <div ref={btnRef} className={`flex w-full justify-center ${disabled ? 'pointer-events-none opacity-50' : ''}`} />
+      <div
+        ref={btnRef}
+        className={`flex min-h-10 w-full justify-center ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+      />
       {!ready && (
         <Button type="button" variant="outline" className="w-full" disabled>
           {label}
