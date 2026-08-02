@@ -61,8 +61,8 @@ type AdminPlate = {
   last_seen_at?: string | null;
   primaryImage?: {
     id: string;
-    url: string;
-    thumb_url?: string | null;
+    image_url: string;
+    thumbnail_url?: string | null;
   } | null;
 };
 
@@ -287,7 +287,7 @@ export function AdminPlatesPage() {
                 </TableRow>
               )}
               {plates.map((p) => {
-                const thumb = p.primaryImage?.thumb_url || p.primaryImage?.url;
+                const thumb = p.primaryImage?.thumbnail_url || p.primaryImage?.image_url;
                 return (
                   <TableRow key={p.id}>
                     <TableCell>

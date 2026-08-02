@@ -327,7 +327,7 @@ router.get('/plates', async (req, res, next) => {
           model: PlateImage,
           as: 'primaryImage',
           required: false,
-          attributes: ['id', 'url', 'thumb_url', 'is_approved'],
+          attributes: ['id', 'image_url', 'thumbnail_url', 'is_approved'],
         },
       ],
       order: [['created_at', 'DESC']],
