@@ -1,0 +1,126 @@
+name: Deploy BeepCred
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+concurrency:
+  group: deploy-beepcred
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail.pem
+          chmod 600 ~/.ssh/lightsail.pem
+          ssh-keyscan -H "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Rsync to Lightsail
+        env:
+          DEPLOY_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          DEPLOY_USER: ${{ secrets.LIGHTSAIL_USER }}
+        run: |
+          APP_DIR="/opt/bitnami/apps/beepcred"
+          RSYNC_SSH='ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30'
+          DEST="${DEPLOY_USER}@${DEPLOY_HOST}:${APP_DIR}"
+          ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${APP_DIR}"
+          for attempt in 1 2 3 4 5; do
+            echo "rsync attempt $attempt → ${APP_DIR}..."
+            if rsync -avz -e "$RSYNC_SSH" \
+              --exclude '.git' \
+              --exclude 'node_modules' \
+              --exclude 'client/node_modules' \
+              --exclude 'server/node_modules' \
+              --exclude '.env' \
+              --exclude 'server/db/*.sqlite' \
+              --exclude 'server/db/*.sqlite-*' \
+              --exclude 'server/uploads/*' \
+              --include 'server/uploads/.gitkeep' \
+              --exclude 'client/dist' \
+              --exclude '.DS_Store' \
+              --exclude '*.log' \
+              ./ "${DEST}/"; then
+              break
+            fi
+            if [[ $attempt -eq 5 ]]; then exit 1; fi
+            sleep 20
+          done
+
+      - name: Install, build, migrate if needed, restart PM2
+        env:
+          DEPLOY_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          DEPLOY_USER: ${{ secrets.LIGHTSAIL_USER }}
+        run: |
+          ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="/opt/bitnami/apps/beepcred"
+          cd "$APP_DIR"
+
+          if [ ! -f .env ]; then
+            echo "Missing .env — creating from example (change SESSION_SECRET after deploy)"
+            cp .env.example .env
+            sed -i 's/^NODE_ENV=.*/NODE_ENV=production/' .env
+            sed -i 's|^CLIENT_ORIGIN=.*|CLIENT_ORIGIN=https://beepcred.danieljrobles.com|' .env
+            sed -i 's|^VITE_API_URL=.*|VITE_API_URL=|' .env
+            # Generate a session secret if still default
+            if grep -q 'beepcred-local-dev-secret' .env; then
+              SECRET=$(openssl rand -hex 32)
+              sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${SECRET}|" .env
+            fi
+          fi
+
+          npm install --omit=dev
+          (cd server && npm install --omit=dev)
+          (cd client && npm install)
+
+          npm run build
+
+          if [ ! -f server/db/database.sqlite ]; then
+            echo "First-time DB: migrate + seed"
+            npm run db:migrate
+            npm run db:seed
+          fi
+
+          mkdir -p server/uploads
+          touch server/uploads/.gitkeep
+
+          if command -v pm2 >/dev/null 2>&1; then
+            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 save || true
+            sleep 2
+            pm2 list || true
+            curl -s -o /dev/null -w "beepcred /api/health: %{http_code}\n" --max-time 10 http://127.0.0.1:3010/api/health || true
+          else
+            echo "pm2 not found" >&2
+            exit 1
+          fi
+          REMOTE
+
+      - name: Verify subdomain (HTTP Host)
+        env:
+          DEPLOY_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 \
+              -H "Host: beepcred.danieljrobles.com" \
+              "http://${DEPLOY_HOST}/" || echo "000")
+            echo "attempt $attempt: Host beepcred → $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
