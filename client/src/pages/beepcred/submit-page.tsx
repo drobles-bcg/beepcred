@@ -21,6 +21,7 @@ import {
   createPlateWithImage,
 } from '@/lib/create-plate';
 import { PlateTypesMultiSelect } from '@/components/beepcred/plate-types-multi-select';
+import { MakeModelPicker } from '@/components/beepcred/make-model-picker';
 
 export function SubmitPage() {
   const navigate = useNavigate();
@@ -99,16 +100,14 @@ export function SubmitPage() {
                 <Input value={plateNumber} onChange={(e) => setPlateNumber(e.target.value.toUpperCase())} />
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Make</Label>
-                <Input value={make} onChange={(e) => setMake(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Model</Label>
-                <Input value={model} onChange={(e) => setModel(e.target.value)} />
-              </div>
-            </div>
+            <MakeModelPicker
+              make={make}
+              model={model}
+              onChange={({ make: nextMake, model: nextModel }) => {
+                setMake(nextMake);
+                setModel(nextModel);
+              }}
+            />
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label>Year</Label>

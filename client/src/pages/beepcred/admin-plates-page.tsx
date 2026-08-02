@@ -32,6 +32,7 @@ import {
   createPlateWithImage,
 } from '@/lib/create-plate';
 import { PlateTypesMultiSelect } from '@/components/beepcred/plate-types-multi-select';
+import { MakeModelPicker } from '@/components/beepcred/make-model-picker';
 
 type AdminPlate = {
   id: string;
@@ -490,24 +491,12 @@ export function AdminPlatesPage() {
                 placeholder="Optional user-facing text"
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="plate-make">Make</Label>
-                <Input
-                  id="plate-make"
-                  value={form.make}
-                  onChange={(e) => setForm((f) => ({ ...f, make: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="plate-model">Model</Label>
-                <Input
-                  id="plate-model"
-                  value={form.model}
-                  onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-                />
-              </div>
-            </div>
+            <MakeModelPicker
+              idPrefix={editing ? 'edit-vehicle' : 'create-vehicle'}
+              make={form.make}
+              model={form.model}
+              onChange={({ make, model }) => setForm((f) => ({ ...f, make, model }))}
+            />
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plate-year">Year</Label>
