@@ -51,13 +51,23 @@ async function migrate() {
       await qi.addColumn('users', 'google_id', {
         type: DataTypes.STRING(64),
         allowNull: true,
-        unique: true,
       });
       console.log('Added column: users.google_id');
     }
-    // SQLite cannot easily ALTER NOT NULL → NULL; recreate not needed for Sequelize sync.
-    // Existing password_hash NOT NULL remains; OAuth users store empty string if needed.
-    // Prefer empty string fallback when column still NOT NULL on older DBs — handled in auth route.
+    try {
+      await sequelize.query(
+        'CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users (google_id) WHERE google_id IS NOT NULL'
+      );
+      console.log('Ensured unique index: users_google_id_unique');
+    } catch (e) {
+      // SQLite without partial indexes: try plain unique index (multiple NULLs ok in SQLite UNIQUE)
+      try {
+        await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users (google_id)');
+        console.log('Ensured unique index: users_google_id_unique');
+      } catch (e2) {
+        console.warn('Could not create google_id unique index:', e2.message);
+      }
+    }
 
     console.log('Database migration checks complete.');
     process.exit(0);
