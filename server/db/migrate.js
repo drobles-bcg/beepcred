@@ -77,6 +77,30 @@ async function migrate() {
       }
     }
 
+    const garage = await qi.describeTable('garage_vehicles');
+    if (!garage.ownership_status) {
+      await qi.addColumn('garage_vehicles', 'ownership_status', {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'current',
+      });
+      console.log('Added column: garage_vehicles.ownership_status');
+    }
+    if (!garage.owned_from) {
+      await qi.addColumn('garage_vehicles', 'owned_from', {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      });
+      console.log('Added column: garage_vehicles.owned_from');
+    }
+    if (!garage.owned_until) {
+      await qi.addColumn('garage_vehicles', 'owned_until', {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      });
+      console.log('Added column: garage_vehicles.owned_until');
+    }
+
     console.log('Database migration checks complete.');
     process.exit(0);
   } catch (err) {

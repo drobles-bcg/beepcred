@@ -98,9 +98,11 @@ jobs:
 
           (cd server && npm install --omit=dev)
 
+          echo "Running DB migrate checks"
+          npm run db:migrate
+
           if [ ! -f server/db/database.sqlite ]; then
-            echo "First-time DB: migrate + seed"
-            npm run db:migrate
+            echo "First-time DB: seed"
             npm run db:seed
           fi
 

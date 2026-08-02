@@ -399,34 +399,42 @@ export function PlatePage() {
             ) : null}
 
             <Card>
-              <CardHeader>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-2">
+              <CardContent className="space-y-4 p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-3">
                     <PlateBadge
                       state={p.state}
                       plate={p.plate_number}
                       displayPlateText={p.display_plate_text}
                     />
-                    <CardTitle className="text-lg">
-                      {[p.year, p.color, p.make, p.model].filter(Boolean).join(' · ') || 'Vehicle details unknown'}
-                    </CardTitle>
-                    {Array.isArray(p.plate_types) && p.plate_types.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {p.plate_types.map((t) => (
-                          <Badge key={t} variant="secondary" className="capitalize">
-                            {t.replace(/_/g, ' ')}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    <p className="text-sm text-muted-foreground">
-                      First seen {p.first_seen_at ? formatDistanceToNow(new Date(p.first_seen_at), { addSuffix: true }) : '—'}{' '}
-                      · Last seen{' '}
-                      {p.last_seen_at ? formatDistanceToNow(new Date(p.last_seen_at), { addSuffix: true }) : '—'}
-                      · {p.post_count} photos · {p.comment_count} comments
-                    </p>
+                    <div className="space-y-1.5">
+                      <CardTitle className="text-lg leading-snug">
+                        {[p.year, p.color, p.make, p.model].filter(Boolean).join(' · ') ||
+                          'Vehicle details unknown'}
+                      </CardTitle>
+                      {Array.isArray(p.plate_types) && p.plate_types.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.plate_types.map((t) => (
+                            <Badge key={t} variant="secondary" className="capitalize">
+                              {t.replace(/_/g, ' ')}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="text-sm text-muted-foreground">
+                        First seen{' '}
+                        {p.first_seen_at
+                          ? formatDistanceToNow(new Date(p.first_seen_at), { addSuffix: true })
+                          : '—'}{' '}
+                        · Last seen{' '}
+                        {p.last_seen_at
+                          ? formatDistanceToNow(new Date(p.last_seen_at), { addSuffix: true })
+                          : '—'}{' '}
+                        · {p.post_count} photos · {p.comment_count} comments
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {user ? (
                       claimQuery.data?.ownership_status === 'current' ? (
                         <>
@@ -470,19 +478,19 @@ export function PlatePage() {
                     ) : null}
                     <ReportButton contentType="plate" contentId={p.id} label="Report plate" />
                   </div>
-                  {(claimMut.isError || releaseMut.isError) && (
-                    <p className="w-full basis-full text-sm text-destructive">
-                      {axios.isAxiosError(claimMut.error)
-                        ? (claimMut.error.response?.data as { error?: string } | undefined)?.error ||
-                          claimMut.error.message
-                        : axios.isAxiosError(releaseMut.error)
-                          ? (releaseMut.error.response?.data as { error?: string } | undefined)?.error ||
-                            releaseMut.error.message
-                          : 'Could not update ownership'}
-                    </p>
-                  )}
                 </div>
-              </CardHeader>
+                {(claimMut.isError || releaseMut.isError) && (
+                  <p className="text-sm text-destructive">
+                    {axios.isAxiosError(claimMut.error)
+                      ? (claimMut.error.response?.data as { error?: string } | undefined)?.error ||
+                        claimMut.error.message
+                      : axios.isAxiosError(releaseMut.error)
+                        ? (releaseMut.error.response?.data as { error?: string } | undefined)?.error ||
+                          releaseMut.error.message
+                        : 'Could not update ownership'}
+                  </p>
+                )}
+              </CardContent>
             </Card>
 
             <Card>
