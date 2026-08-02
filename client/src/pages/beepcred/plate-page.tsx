@@ -18,6 +18,7 @@ import { Helmet } from 'react-helmet-async';
 import { credTextClass, formatCred } from '@/lib/cred-style';
 import { useAuth } from '@/providers/auth-provider';
 import { useState } from 'react';
+import { Car, Check } from 'lucide-react';
 import {
   PieChart,
   Pie,
@@ -26,7 +27,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { formatDistanceToNow } from 'date-fns';
-
+import axios from 'axios';
 const REASONS = [
   { v: 'cool_plate', label: 'Cool plate' },
   { v: 'funny_plate', label: 'Funny plate' },
@@ -45,6 +46,13 @@ const REASONS = [
 ];
 
 const COLORS = ['#17C653', '#F8285A', '#FFC700', '#99A1B7', '#6366f1'];
+
+type GarageClaim = {
+  id: string;
+  ownership_status: 'current' | 'former' | string;
+  make: string;
+  model: string;
+};
 
 type PlateAiInsightsResponse = {
   configured: boolean;
@@ -116,6 +124,37 @@ export function PlatePage() {
   });
 
   const pid = plateQuery.data?.id;
+
+  const claimQuery = useQuery({
+    queryKey: ['garage', 'for-plate', pid],
+    enabled: Boolean(user && pid),
+    queryFn: async () => {
+      const { data } = await api.get(`/api/garage/for-plate/${pid}`);
+      return (data.vehicle || null) as GarageClaim | null;
+    },
+  });
+
+  const claimMut = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/api/garage/claim', { plate_id: pid });
+      return data.vehicle as GarageClaim;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['garage', 'for-plate', pid] });
+      await qc.invalidateQueries({ queryKey: ['garage'] });
+    },
+  });
+
+  const releaseMut = useMutation({
+    mutationFn: async (vehicleId: string) => {
+      const { data } = await api.post(`/api/garage/${vehicleId}/release`);
+      return data.vehicle as GarageClaim;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['garage', 'for-plate', pid] });
+      await qc.invalidateQueries({ queryKey: ['garage'] });
+    },
+  });
 
   const imagesQuery = useQuery({
     queryKey: ['plate', pid, 'images'],
@@ -388,11 +427,60 @@ export function PlatePage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {user ? (
+                      claimQuery.data?.ownership_status === 'current' ? (
+                        <>
+                          <Button variant="secondary" size="sm" asChild>
+                            <Link to={`/account/garage/${claimQuery.data.id}`}>
+                              <Check className="size-4" />
+                              In your garage
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={releaseMut.isPending}
+                            onClick={() => releaseMut.mutate(claimQuery.data!.id)}
+                          >
+                            I no longer own this
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={claimMut.isPending || claimQuery.isLoading}
+                          onClick={() => claimMut.mutate()}
+                        >
+                          <Car className="size-4" />
+                          {claimQuery.data?.ownership_status === 'former'
+                            ? 'I own this again'
+                            : 'This is my car'}
+                        </Button>
+                      )
+                    ) : (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/login">
+                          <Car className="size-4" />
+                          Claim as mine
+                        </Link>
+                      </Button>
+                    )}
                     {hero?.id ? (
                       <ReportButton contentType="image" contentId={hero.id} label="Report photo" />
                     ) : null}
                     <ReportButton contentType="plate" contentId={p.id} label="Report plate" />
                   </div>
+                  {(claimMut.isError || releaseMut.isError) && (
+                    <p className="w-full basis-full text-sm text-destructive">
+                      {axios.isAxiosError(claimMut.error)
+                        ? (claimMut.error.response?.data as { error?: string } | undefined)?.error ||
+                          claimMut.error.message
+                        : axios.isAxiosError(releaseMut.error)
+                          ? (releaseMut.error.response?.data as { error?: string } | undefined)?.error ||
+                            releaseMut.error.message
+                          : 'Could not update ownership'}
+                    </p>
+                  )}
                 </div>
               </CardHeader>
             </Card>

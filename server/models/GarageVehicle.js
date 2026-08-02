@@ -60,6 +60,20 @@ module.exports = (sequelize) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      /** current = I own this now; former = I owned it before */
+      ownership_status: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'current',
+      },
+      owned_from: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
+      owned_until: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
       notes: DataTypes.TEXT,
     },
     {
@@ -72,5 +86,6 @@ module.exports = (sequelize) => {
   );
 
   GarageVehicle.BODY_TYPES = BODY_TYPES;
+  GarageVehicle.OWNERSHIP_STATUSES = ['current', 'former'];
   return GarageVehicle;
 };

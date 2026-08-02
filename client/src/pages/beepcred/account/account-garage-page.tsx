@@ -45,6 +45,7 @@ export type GarageVehicle = {
   mileage: number | null;
   plate_state: string | null;
   plate_number: string | null;
+  ownership_status?: 'current' | 'former' | string;
   registration_due_at: string | null;
   favorite_shop_name: string | null;
   owner_rating: number | null;
@@ -168,7 +169,7 @@ export function AccountGaragePage() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight">Cars I own</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Track registration, service intervals, and plate links for your vehicles.
+              Current vehicles only — claim a plate from its page, or add a car manually.
             </p>
           </div>
           <Button

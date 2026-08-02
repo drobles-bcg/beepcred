@@ -106,18 +106,156 @@ async function getOwnedVehicle(req, id) {
   });
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeOwnershipStatus(raw, fallback = 'current') {
+  const allowed = GarageVehicle.OWNERSHIP_STATUSES || ['current', 'former'];
+  if (raw == null || raw === '') return fallback;
+  const v = String(raw).toLowerCase();
+  return allowed.includes(v) ? v : fallback;
+}
+
 router.get('/', async (req, res, next) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
+    const statusParam = String(req.query.status || 'current').toLowerCase();
+    const where = { user_id: req.session.userId };
+    if (statusParam === 'current' || statusParam === 'former') {
+      where.ownership_status = statusParam;
+    } else if (statusParam !== 'all') {
+      where.ownership_status = 'current';
+    }
     const rows = await GarageVehicle.findAll({
-      where: { user_id: req.session.userId },
+      where,
       include: vehicleInclude(),
       order: [['updated_at', 'DESC']],
     });
     res.json({
       vehicles: rows.map((v) => enrichVehicle(v, today)),
       total: rows.length,
+      status: statusParam === 'all' || statusParam === 'former' ? statusParam : 'current',
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Viewer's garage link for a community plate (if any). */
+router.get('/for-plate/:plateId', async (req, res, next) => {
+  try {
+    if (!isUUID(req.params.plateId)) return res.status(400).json({ error: 'Invalid plate id' });
+    const vehicle = await GarageVehicle.findOne({
+      where: { user_id: req.session.userId, plate_id: req.params.plateId },
+      include: vehicleInclude(),
+      order: [['updated_at', 'DESC']],
+    });
+    if (!vehicle) return res.json({ vehicle: null });
+    res.json({ vehicle: enrichVehicle(vehicle, todayIso()) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * Claim a community plate as a car you currently own.
+ * Reuses an existing garage row for this plate if present (reactivates former → current).
+ */
+router.post('/claim', async (req, res, next) => {
+  try {
+    const plateIdRaw = req.body?.plate_id;
+    if (!plateIdRaw || !isUUID(String(plateIdRaw))) {
+      return res.status(400).json({ error: 'plate_id required' });
+    }
+    const plate = await LicensePlate.findByPk(plateIdRaw);
+    if (!plate) return res.status(404).json({ error: 'Plate not found' });
+
+    const today = todayIso();
+    let vehicle = await GarageVehicle.findOne({
+      where: { user_id: req.session.userId, plate_id: plate.id },
+    });
+    let created = false;
+
+    const bodyType = (GarageVehicle.BODY_TYPES || []).includes(plate.body_type)
+      ? plate.body_type
+      : 'other';
+    const make = (plate.make && String(plate.make).trim()) || 'Unknown';
+    const model = (plate.model && String(plate.model).trim()) || 'Vehicle';
+
+    if (vehicle) {
+      await vehicle.update({
+        ownership_status: 'current',
+        owned_until: null,
+        owned_from: vehicle.owned_from || today,
+        plate_state: plate.state,
+        plate_number: plate.plate_number,
+        make: vehicle.make || make,
+        model: vehicle.model || model,
+        year: vehicle.year ?? plate.year ?? null,
+        color: vehicle.color || plate.color || null,
+        body_type: vehicle.body_type || bodyType,
+      });
+    } else {
+      created = true;
+      vehicle = await GarageVehicle.create({
+        user_id: req.session.userId,
+        nickname: null,
+        year: plate.year || null,
+        make,
+        model,
+        trim: null,
+        color: plate.color || null,
+        body_type: bodyType,
+        mileage: null,
+        plate_id: plate.id,
+        plate_state: plate.state,
+        plate_number: plate.plate_number,
+        ownership_status: 'current',
+        owned_from: today,
+        owned_until: null,
+        registration_due_at: null,
+        favorite_shop_name: null,
+        favorite_shop_phone: null,
+        favorite_shop_address: null,
+        owner_rating: null,
+        notes: null,
+      });
+
+      await GarageService.bulkCreate(
+        DEFAULT_SERVICES.map((s) => ({
+          vehicle_id: vehicle.id,
+          service_type: s.service_type,
+          title: s.title,
+          interval_months: s.interval_months,
+          last_done_at: null,
+          due_at: null,
+          notes: null,
+        }))
+      );
+    }
+
+    const full = await getOwnedVehicle(req, vehicle.id);
+    res.status(created ? 201 : 200).json({ vehicle: enrichVehicle(full, today), created });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Mark a garage vehicle as formerly owned (keep history). */
+router.post('/:id/release', async (req, res, next) => {
+  try {
+    const vehicle = await GarageVehicle.findOne({
+      where: { id: req.params.id, user_id: req.session.userId },
+    });
+    if (!vehicle) return res.status(404).json({ error: 'Not found' });
+    const today = todayIso();
+    await vehicle.update({
+      ownership_status: 'former',
+      owned_until: today,
+    });
+    const full = await getOwnedVehicle(req, vehicle.id);
+    res.json({ vehicle: enrichVehicle(full, today) });
   } catch (e) {
     next(e);
   }
@@ -143,6 +281,7 @@ router.post('/', async (req, res, next) => {
       favorite_shop_address,
       owner_rating,
       notes,
+      ownership_status,
     } = req.body || {};
 
     if (!make || !String(make).trim() || !model || !String(model).trim()) {
@@ -155,6 +294,8 @@ router.post('/', async (req, res, next) => {
     const miles = mileage === '' || mileage == null ? null : parseInt(mileage, 10);
     const rating =
       owner_rating === '' || owner_rating == null ? null : parseInt(owner_rating, 10);
+    const ownership = normalizeOwnershipStatus(ownership_status, 'current');
+    const today = todayIso();
 
     let plateId = null;
     let st = plate_state ? normalizeState(plate_state) : null;
@@ -167,6 +308,16 @@ router.post('/', async (req, res, next) => {
       plateId = plate.id;
       st = plate.state;
       num = plate.plate_number;
+
+      const existing = await GarageVehicle.findOne({
+        where: { user_id: req.session.userId, plate_id: plateId },
+      });
+      if (existing) {
+        return res.status(409).json({
+          error: 'This plate is already in your garage',
+          vehicle_id: existing.id,
+        });
+      }
     }
 
     const vehicle = await GarageVehicle.create({
@@ -182,6 +333,9 @@ router.post('/', async (req, res, next) => {
       plate_id: plateId,
       plate_state: st && st.length === 2 ? st : null,
       plate_number: num || null,
+      ownership_status: ownership,
+      owned_from: ownership === 'current' ? today : null,
+      owned_until: ownership === 'former' ? today : null,
       registration_due_at: registration_due_at || null,
       favorite_shop_name: favorite_shop_name || null,
       favorite_shop_phone: favorite_shop_phone || null,
@@ -190,7 +344,6 @@ router.post('/', async (req, res, next) => {
       notes: notes || null,
     });
 
-    const today = new Date().toISOString().slice(0, 10);
     await GarageService.bulkCreate(
       DEFAULT_SERVICES.map((s) => ({
         vehicle_id: vehicle.id,
@@ -274,6 +427,17 @@ router.put('/:id', async (req, res, next) => {
     if (body.body_type !== undefined) {
       const allowedBody = GarageVehicle.BODY_TYPES || [];
       updates.body_type = allowedBody.includes(body.body_type) ? body.body_type : vehicle.body_type;
+    }
+    if (body.ownership_status !== undefined) {
+      const ownership = normalizeOwnershipStatus(body.ownership_status, vehicle.ownership_status);
+      updates.ownership_status = ownership;
+      if (ownership === 'former' && !vehicle.owned_until) {
+        updates.owned_until = todayIso();
+      }
+      if (ownership === 'current') {
+        updates.owned_until = null;
+        if (!vehicle.owned_from) updates.owned_from = todayIso();
+      }
     }
     if (body.plate_state !== undefined || body.plate_number !== undefined) {
       const st = normalizeState(body.plate_state !== undefined ? body.plate_state : vehicle.plate_state);

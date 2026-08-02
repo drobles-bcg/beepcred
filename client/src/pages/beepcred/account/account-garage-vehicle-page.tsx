@@ -127,6 +127,18 @@ export function AccountGarageVehiclePage() {
     onError: (err) => setFormError(apiErrorMessage(err, 'Could not update service')),
   });
 
+  const releaseMut = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(`/api/garage/${id}/release`);
+      return data.vehicle as GarageVehicle;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['garage', id] });
+      await qc.invalidateQueries({ queryKey: ['garage'] });
+    },
+    onError: (err) => setFormError(apiErrorMessage(err, 'Could not update ownership')),
+  });
+
   if (vehicleQ.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading vehicle…</p>;
   }
@@ -164,10 +176,17 @@ export function AccountGarageVehiclePage() {
             <p className="text-sm font-medium text-[oklch(0.45_0.08_240)]">{v.nickname}</p>
           ) : null}
           <h2 className="text-2xl font-semibold tracking-tight">{vehicleTitle(v)}</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {v.ownership_status === 'former' ? (
+              <Badge variant="secondary">Former car</Badge>
+            ) : (
+              <Badge>Current</Badge>
+            )}
             {v.plate_state && v.plate_number ? (
-              <Badge variant="outline" className="font-mono tracking-wide">
-                {v.plate_state} {v.plate_number}
+              <Badge variant="outline" className="font-mono tracking-wide" asChild>
+                <Link to={`/plate/${encodeURIComponent(v.plate_state)}/${encodeURIComponent(v.plate_number)}`}>
+                  {v.plate_state} {v.plate_number}
+                </Link>
               </Badge>
             ) : (
               <Badge variant="secondary">No plate linked</Badge>
@@ -176,6 +195,17 @@ export function AccountGarageVehiclePage() {
             <Badge variant="outline" className="capitalize">
               {v.body_type}
             </Badge>
+            {v.ownership_status !== 'former' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={releaseMut.isPending}
+                onClick={() => releaseMut.mutate()}
+              >
+                I no longer own this
+              </Button>
+            ) : null}
           </div>
         </div>
 
