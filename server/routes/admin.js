@@ -47,6 +47,7 @@ router.get('/users', async (req, res, next) => {
       where[Op.or] = [
         { username: { [Op.like]: `%${q}%` } },
         { email: { [Op.like]: `%${q}%` } },
+        { display_name: { [Op.like]: `%${q}%` } },
       ];
     }
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -65,17 +66,119 @@ router.get('/users', async (req, res, next) => {
   }
 });
 
+router.post('/users', async (req, res, next) => {
+  try {
+    const bcrypt = require('bcrypt');
+    const {
+      username,
+      email,
+      password,
+      display_name,
+      role = 'user',
+      bio,
+      is_banned = false,
+    } = req.body || {};
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'username, email, and password required' });
+    }
+    const uname = String(username).trim().toLowerCase();
+    const em = String(email).trim().toLowerCase();
+    const allowedRoles = ['user', 'moderator', 'admin'];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+    const existing = await User.findOne({
+      where: { [Op.or]: [{ username: uname }, { email: em }] },
+    });
+    if (existing) {
+      return res.status(409).json({ error: 'Username or email already taken' });
+    }
+    const password_hash = await bcrypt.hash(String(password), 12);
+    const user = await User.create({
+      username: uname,
+      email: em,
+      password_hash,
+      display_name: display_name || uname,
+      role,
+      bio: bio || null,
+      is_banned: Boolean(is_banned),
+      last_active_at: new Date(),
+    });
+    const j = user.toJSON();
+    delete j.password_hash;
+    res.status(201).json({ user: j });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.put('/users/:id', async (req, res, next) => {
   try {
+    const { canAccessAdmin, OWNER_ADMIN_EMAIL } = require('../lib/adminAccess');
+    const bcrypt = require('bcrypt');
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'Not found' });
-    const { role, is_banned } = req.body;
-    await user.update({
-      role: role !== undefined ? role : user.role,
-      is_banned: is_banned !== undefined ? Boolean(is_banned) : user.is_banned,
-    });
+
+    const isOwnerAccount = canAccessAdmin(user);
+    const {
+      username,
+      email,
+      display_name,
+      bio,
+      role,
+      is_banned,
+      votes_visible,
+      password,
+    } = req.body || {};
+
+    if (isOwnerAccount) {
+      if (is_banned === true) {
+        return res.status(400).json({ error: 'Cannot ban the owner account' });
+      }
+      if (role !== undefined && role !== 'admin') {
+        return res.status(400).json({ error: 'Cannot change owner role' });
+      }
+      if (email !== undefined && String(email).trim().toLowerCase() !== OWNER_ADMIN_EMAIL) {
+        return res.status(400).json({ error: 'Cannot change owner email' });
+      }
+    }
+
+    const updates = {};
+    if (username !== undefined) updates.username = String(username).trim().toLowerCase();
+    if (email !== undefined) updates.email = String(email).trim().toLowerCase();
+    if (display_name !== undefined) updates.display_name = display_name;
+    if (bio !== undefined) updates.bio = bio;
+    if (votes_visible !== undefined) updates.votes_visible = Boolean(votes_visible);
+    if (role !== undefined) {
+      const allowedRoles = ['user', 'moderator', 'admin'];
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+      updates.role = role;
+    }
+    if (is_banned !== undefined) updates.is_banned = Boolean(is_banned);
+    if (password) {
+      updates.password_hash = await bcrypt.hash(String(password), 12);
+    }
+
+    if (updates.username || updates.email) {
+      const or = [];
+      if (updates.username) or.push({ username: updates.username });
+      if (updates.email) or.push({ email: updates.email });
+      const conflict = await User.findOne({
+        where: {
+          id: { [Op.ne]: id },
+          [Op.or]: or,
+        },
+      });
+      if (conflict) {
+        return res.status(409).json({ error: 'Username or email already taken' });
+      }
+    }
+
+    await user.update(updates);
     const j = user.toJSON();
     delete j.password_hash;
     res.json({ user: j });
@@ -86,6 +189,7 @@ router.put('/users/:id', async (req, res, next) => {
 
 router.delete('/users/:id', async (req, res, next) => {
   try {
+    const { canAccessAdmin } = require('../lib/adminAccess');
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
     if (id === req.session.userId) {
@@ -93,6 +197,9 @@ router.delete('/users/:id', async (req, res, next) => {
     }
     const user = await User.findByPk(id);
     if (!user) return res.status(404).json({ error: 'Not found' });
+    if (canAccessAdmin(user)) {
+      return res.status(400).json({ error: 'Cannot delete the owner account' });
+    }
     await user.destroy();
     res.json({ ok: true });
   } catch (e) {
