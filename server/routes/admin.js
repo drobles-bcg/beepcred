@@ -358,6 +358,7 @@ router.post('/plates', async (req, res, next) => {
       year,
       color,
       body_type = 'other',
+      cred_score,
     } = req.body || {};
 
     const num = normalizePlateNumber(plate_number);
@@ -374,6 +375,9 @@ router.post('/plates', async (req, res, next) => {
     const allowedBody = LicensePlate.BODY_TYPES || [];
     const bodyType = allowedBody.includes(body_type) ? body_type : 'other';
     const yearNum = year === '' || year === null || year === undefined ? null : parseInt(year, 10);
+    const scoreNum = cred_score === '' || cred_score === null || cred_score === undefined
+      ? null
+      : parseInt(cred_score, 10);
 
     const plate = await LicensePlate.create({
       plate_number: num,
@@ -386,6 +390,7 @@ router.post('/plates', async (req, res, next) => {
       year: Number.isFinite(yearNum) ? yearNum : null,
       color: color || null,
       body_type: bodyType,
+      cred_score: Number.isFinite(scoreNum) ? scoreNum : 0,
       first_seen_at: new Date(),
       last_seen_at: new Date(),
     });

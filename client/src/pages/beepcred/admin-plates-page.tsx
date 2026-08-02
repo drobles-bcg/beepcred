@@ -187,36 +187,52 @@ export function AdminPlatesPage() {
         return data.plate as AdminPlate;
       }
 
-      if (!file) throw new Error('Pick an image');
+      let plate: AdminPlate;
 
-      const { plate } = await createPlateWithImage(
-        {
-          state: form.state,
+      if (file) {
+        const created = await createPlateWithImage(
+          {
+            state: form.state,
+            plate_number: form.plate_number,
+            country: form.country || 'US',
+            display_plate_text: form.display_plate_text || undefined,
+            make: form.make,
+            model: form.model,
+            year: form.year,
+            color: form.color,
+            body_type: form.body_type || 'other',
+          },
+          {
+            file,
+            caption: form.caption,
+            shot_type: form.shot_type,
+            city: form.city,
+          },
+        );
+        plate = created.plate as unknown as AdminPlate;
+      } else {
+        const { data } = await api.post('/api/admin/plates', {
           plate_number: form.plate_number,
+          display_plate_text: form.display_plate_text || form.plate_number,
+          state: form.state,
           country: form.country || 'US',
-          display_plate_text: form.display_plate_text || undefined,
-          make: form.make,
-          model: form.model,
-          year: form.year,
-          color: form.color,
+          make: form.make || null,
+          model: form.model || null,
+          year: form.year || null,
+          color: form.color || null,
           body_type: form.body_type || 'other',
-        },
-        {
-          file,
-          caption: form.caption,
-          shot_type: form.shot_type,
-          city: form.city,
-        },
-      );
+          cred_score: form.cred_score,
+        });
+        plate = data.plate as AdminPlate;
+      }
 
-      // Admin-only field after shared create
       const cred = parseInt(form.cred_score, 10);
-      if (Number.isFinite(cred) && cred !== 0) {
+      if (file && Number.isFinite(cred) && cred !== 0) {
         const { data } = await api.put(`/api/admin/plates/${plate.id}`, { cred_score: cred });
         return data.plate as AdminPlate;
       }
 
-      return plate as unknown as AdminPlate;
+      return plate;
     },
     onSuccess: async () => {
       setFormError('');
@@ -406,14 +422,12 @@ export function AdminPlatesPage() {
             <DialogDescription>
               {editing
                 ? `Update ${editing.state} ${editing.plate_number}`
-                : 'Uses the same create flow as user submit: plate record + photo upload.'}
+                : 'Add a license plate record. Photo is optional.'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="plate-photo">
-                Photo{editing ? ' (optional — adds another image)' : ''}
-              </Label>
+              <Label htmlFor="plate-photo">Photo (optional)</Label>
               <Input
                 id="plate-photo"
                 type="file"
@@ -526,7 +540,7 @@ export function AdminPlatesPage() {
                 />
               </div>
             </div>
-            {(file || !editing) && (
+            {file && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="plate-shot">Shot type</Label>
@@ -553,7 +567,7 @@ export function AdminPlatesPage() {
                 </div>
               </div>
             )}
-            {(file || !editing) && (
+            {file && (
               <div className="space-y-1.5">
                 <Label htmlFor="plate-caption">Caption (optional)</Label>
                 <Input
@@ -574,8 +588,7 @@ export function AdminPlatesPage() {
               disabled={
                 saveMutation.isPending ||
                 form.state.trim().length !== 2 ||
-                !form.plate_number.trim() ||
-                (!editing && !file)
+                !form.plate_number.trim()
               }
             >
               {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create plate'}
