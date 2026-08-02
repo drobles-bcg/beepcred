@@ -10,8 +10,190 @@ const {
 } = require('../db');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireAdmin } = require('../middleware/requireAdmin');
+const { canAccessAdmin } = require('../lib/adminAccess');
 const { isUUID } = require('../lib/uuid');
 const { normalizePlateTypes } = require('../lib/plateTypes');
+
+const REPORT_STATUSES = ['pending', 'reviewed', 'dismissed', 'actioned'];
+
+async function resolveReportContent(report) {
+  const type = report.content_type;
+  const id = report.content_id;
+  if (!type || !id) return null;
+
+  if (type === 'plate') {
+    const plate = await LicensePlate.findByPk(id, {
+      attributes: [
+        'id',
+        'slug',
+        'state',
+        'plate_number',
+        'display_plate_text',
+        'make',
+        'model',
+        'primary_image_id',
+      ],
+      include: [
+        {
+          model: PlateImage,
+          as: 'primaryImage',
+          required: false,
+          attributes: ['id', 'image_url', 'thumbnail_url'],
+        },
+      ],
+    });
+    if (!plate) return { missing: true };
+    const j = plate.toJSON();
+    return {
+      kind: 'plate',
+      id: j.id,
+      label: `${j.state} ${j.display_plate_text || j.plate_number}`,
+      href: `/plate/${encodeURIComponent(j.state)}/${encodeURIComponent(j.plate_number)}`,
+      thumb: j.primaryImage?.thumbnail_url || j.primaryImage?.image_url || null,
+      meta: [j.make, j.model].filter(Boolean).join(' '),
+    };
+  }
+
+  if (type === 'image') {
+    const image = await PlateImage.findByPk(id, {
+      attributes: ['id', 'image_url', 'thumbnail_url', 'caption', 'plate_id', 'is_approved'],
+      include: [
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'state', 'plate_number', 'display_plate_text', 'slug'],
+        },
+        { model: User, as: 'uploader', attributes: ['id', 'username'] },
+      ],
+    });
+    if (!image) return { missing: true };
+    const j = image.toJSON();
+    const plate = j.plate;
+    return {
+      kind: 'image',
+      id: j.id,
+      label: plate
+        ? `Photo on ${plate.state} ${plate.display_plate_text || plate.plate_number}`
+        : 'Plate photo',
+      href: plate
+        ? `/plate/${encodeURIComponent(plate.state)}/${encodeURIComponent(plate.plate_number)}`
+        : null,
+      thumb: j.thumbnail_url || j.image_url || null,
+      meta: j.uploader?.username ? `by @${j.uploader.username}` : null,
+      plate_id: j.plate_id,
+      is_approved: j.is_approved,
+    };
+  }
+
+  if (type === 'comment') {
+    const comment = await Comment.findByPk(id, {
+      attributes: ['id', 'body', 'is_deleted', 'is_flagged', 'plate_id', 'created_at'],
+      include: [
+        { model: User, as: 'author', attributes: ['id', 'username'] },
+        {
+          model: LicensePlate,
+          as: 'plate',
+          attributes: ['id', 'state', 'plate_number', 'display_plate_text'],
+        },
+      ],
+    });
+    if (!comment) return { missing: true };
+    const j = comment.toJSON();
+    const plate = j.plate;
+    return {
+      kind: 'comment',
+      id: j.id,
+      label: j.is_deleted ? '[comment removed]' : (j.body || '').slice(0, 140),
+      href: plate
+        ? `/plate/${encodeURIComponent(plate.state)}/${encodeURIComponent(plate.plate_number)}`
+        : null,
+      thumb: null,
+      meta: j.author?.username ? `@${j.author.username}` : null,
+      is_deleted: j.is_deleted,
+      is_flagged: j.is_flagged,
+    };
+  }
+
+  if (type === 'user') {
+    const user = await User.findByPk(id, {
+      attributes: ['id', 'username', 'email', 'display_name', 'is_banned', 'avatar_url'],
+    });
+    if (!user) return { missing: true };
+    const j = user.toJSON();
+    return {
+      kind: 'user',
+      id: j.id,
+      label: `@${j.username}`,
+      href: `/user/${encodeURIComponent(j.username)}`,
+      thumb: j.avatar_url || null,
+      meta: j.is_banned ? 'banned' : j.email,
+      is_banned: j.is_banned,
+    };
+  }
+
+  return null;
+}
+
+async function removeReportedContent(report) {
+  const type = report.content_type;
+  const id = report.content_id;
+
+  if (type === 'comment') {
+    const comment = await Comment.findByPk(id);
+    if (!comment) return { ok: false, error: 'Comment not found' };
+    await comment.update({ is_deleted: true, is_flagged: true });
+    return { ok: true, action: 'comment_removed' };
+  }
+
+  if (type === 'image') {
+    const image = await PlateImage.findByPk(id);
+    if (!image) return { ok: false, error: 'Image not found' };
+    const plateId = image.plate_id;
+    const plate = await LicensePlate.findByPk(plateId);
+    await image.destroy();
+    if (plate) {
+      if (plate.primary_image_id === id) {
+        const nextImg = await PlateImage.findOne({
+          where: { plate_id: plateId },
+          order: [['uploaded_at', 'DESC']],
+        });
+        await plate.update({ primary_image_id: nextImg ? nextImg.id : null });
+      }
+      await plate.update({ post_count: Math.max(0, (plate.post_count || 0) - 1) });
+    }
+    return { ok: true, action: 'image_removed' };
+  }
+
+  if (type === 'plate') {
+    const plate = await LicensePlate.findByPk(id);
+    if (!plate) return { ok: false, error: 'Plate not found' };
+    await LicensePlate.update({ primary_image_id: null }, { where: { id } });
+    await PlateImage.destroy({ where: { plate_id: id } });
+    await Comment.destroy({ where: { plate_id: id } });
+    await PlateVote.destroy({ where: { plate_id: id } });
+    await Report.destroy({
+      where: {
+        content_type: 'plate',
+        content_id: id,
+        id: { [Op.ne]: report.id },
+      },
+    });
+    await plate.destroy();
+    return { ok: true, action: 'plate_removed' };
+  }
+
+  if (type === 'user') {
+    const user = await User.findByPk(id);
+    if (!user) return { ok: false, error: 'User not found' };
+    if (canAccessAdmin(user)) {
+      return { ok: false, error: 'Cannot ban the owner account' };
+    }
+    await user.update({ is_banned: true });
+    return { ok: true, action: 'user_banned' };
+  }
+
+  return { ok: false, error: 'Unsupported content type' };
+}
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -211,19 +393,55 @@ router.delete('/users/:id', async (req, res, next) => {
 router.get('/reports', async (req, res, next) => {
   try {
     const status = req.query.status;
+    const contentType = req.query.content_type;
     const where = {};
-    if (status) where.status = status;
+    if (status && status !== 'all') {
+      if (!REPORT_STATUSES.includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+      where.status = status;
+    }
+    if (contentType && contentType !== 'all') {
+      if (!['plate', 'image', 'comment', 'user'].includes(contentType)) {
+        return res.status(400).json({ error: 'Invalid content_type' });
+      }
+      where.content_type = contentType;
+    }
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const offset = (page - 1) * limit;
     const { count, rows } = await Report.findAndCountAll({
       where,
-      include: [{ model: User, as: 'reporter', attributes: ['id', 'username', 'email'] }],
+      include: [
+        { model: User, as: 'reporter', attributes: ['id', 'username', 'email'] },
+        { model: User, as: 'reviewer', attributes: ['id', 'username'], required: false },
+      ],
       order: [['created_at', 'DESC']],
       limit,
       offset,
     });
-    res.json({ reports: rows, page, limit, total: count });
+
+    const reports = [];
+    for (const row of rows) {
+      const j = row.toJSON();
+      j.content = await resolveReportContent(row);
+      reports.push(j);
+    }
+
+    const [pending, reviewed, dismissed, actioned] = await Promise.all([
+      Report.count({ where: { status: 'pending' } }),
+      Report.count({ where: { status: 'reviewed' } }),
+      Report.count({ where: { status: 'dismissed' } }),
+      Report.count({ where: { status: 'actioned' } }),
+    ]);
+
+    res.json({
+      reports,
+      page,
+      limit,
+      total: count,
+      counts: { pending, reviewed, dismissed, actioned, all: pending + reviewed + dismissed + actioned },
+    });
   } catch (e) {
     next(e);
   }
@@ -235,17 +453,52 @@ router.put('/reports/:id', async (req, res, next) => {
     if (!isUUID(id)) return res.status(400).json({ error: 'Invalid id' });
     const report = await Report.findByPk(id);
     if (!report) return res.status(404).json({ error: 'Not found' });
-    const { status } = req.body;
-    const allowed = ['pending', 'reviewed', 'dismissed', 'actioned'];
-    if (status && !allowed.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+
+    const { status, action } = req.body || {};
+    let removal = null;
+
+    if (action === 'remove_content') {
+      removal = await removeReportedContent(report);
+      if (!removal.ok) {
+        return res.status(400).json({ error: removal.error || 'Could not remove content' });
+      }
+      await report.update({
+        status: 'actioned',
+        reviewed_by: req.session.userId,
+        reviewed_at: new Date(),
+      });
+    } else if (action === 'dismiss') {
+      await report.update({
+        status: 'dismissed',
+        reviewed_by: req.session.userId,
+        reviewed_at: new Date(),
+      });
+    } else if (action === 'mark_reviewed') {
+      await report.update({
+        status: 'reviewed',
+        reviewed_by: req.session.userId,
+        reviewed_at: new Date(),
+      });
+    } else {
+      if (status && !REPORT_STATUSES.includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+      await report.update({
+        status: status || report.status,
+        reviewed_by: req.session.userId,
+        reviewed_at: new Date(),
+      });
     }
-    await report.update({
-      status: status || report.status,
-      reviewed_by: req.session.userId,
-      reviewed_at: new Date(),
+
+    const fresh = await Report.findByPk(id, {
+      include: [
+        { model: User, as: 'reporter', attributes: ['id', 'username', 'email'] },
+        { model: User, as: 'reviewer', attributes: ['id', 'username'], required: false },
+      ],
     });
-    res.json({ report });
+    const payload = fresh.toJSON();
+    payload.content = await resolveReportContent(fresh);
+    res.json({ report: payload, removal });
   } catch (e) {
     next(e);
   }

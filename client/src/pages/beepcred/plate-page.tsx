@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api/http';
 import { PlateBadge } from '@/components/beepcred/plate-badge';
+import { ReportButton } from '@/components/beepcred/report-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -360,29 +361,39 @@ export function PlatePage() {
 
             <Card>
               <CardHeader>
-                <PlateBadge
-                  state={p.state}
-                  plate={p.plate_number}
-                  displayPlateText={p.display_plate_text}
-                />
-                <CardTitle className="text-lg">
-                  {[p.year, p.color, p.make, p.model].filter(Boolean).join(' · ') || 'Vehicle details unknown'}
-                </CardTitle>
-                {Array.isArray(p.plate_types) && p.plate_types.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {p.plate_types.map((t) => (
-                      <Badge key={t} variant="secondary" className="capitalize">
-                        {t.replace(/_/g, ' ')}
-                      </Badge>
-                    ))}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-2">
+                    <PlateBadge
+                      state={p.state}
+                      plate={p.plate_number}
+                      displayPlateText={p.display_plate_text}
+                    />
+                    <CardTitle className="text-lg">
+                      {[p.year, p.color, p.make, p.model].filter(Boolean).join(' · ') || 'Vehicle details unknown'}
+                    </CardTitle>
+                    {Array.isArray(p.plate_types) && p.plate_types.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {p.plate_types.map((t) => (
+                          <Badge key={t} variant="secondary" className="capitalize">
+                            {t.replace(/_/g, ' ')}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="text-sm text-muted-foreground">
+                      First seen {p.first_seen_at ? formatDistanceToNow(new Date(p.first_seen_at), { addSuffix: true }) : '—'}{' '}
+                      · Last seen{' '}
+                      {p.last_seen_at ? formatDistanceToNow(new Date(p.last_seen_at), { addSuffix: true }) : '—'}
+                      · {p.post_count} photos · {p.comment_count} comments
+                    </p>
                   </div>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  First seen {p.first_seen_at ? formatDistanceToNow(new Date(p.first_seen_at), { addSuffix: true }) : '—'}{' '}
-                  · Last seen{' '}
-                  {p.last_seen_at ? formatDistanceToNow(new Date(p.last_seen_at), { addSuffix: true }) : '—'}
-                  · {p.post_count} photos · {p.comment_count} comments
-                </p>
+                  <div className="flex flex-wrap gap-2">
+                    {hero?.id ? (
+                      <ReportButton contentType="image" contentId={hero.id} label="Report photo" />
+                    ) : null}
+                    <ReportButton contentType="plate" contentId={p.id} label="Report plate" />
+                  </div>
+                </div>
               </CardHeader>
             </Card>
 
@@ -458,9 +469,14 @@ export function PlatePage() {
                         >
                           @{c.author?.username}
                         </Link>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                          </span>
+                          {!c.is_deleted ? (
+                            <ReportButton contentType="comment" contentId={c.id} label="Report" />
+                          ) : null}
+                        </div>
                       </div>
                       <p className="text-sm">
                         {c.is_deleted ? '[comment removed]' : c.body}
