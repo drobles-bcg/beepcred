@@ -22,6 +22,29 @@ export const BODY_TYPES = [
 
 export const SHOT_TYPES = ['plate', 'front', 'rear', 'side'] as const;
 
+export const PLATE_TYPES = [
+  'dealer',
+  'vanity',
+  'temporary',
+  'paper',
+  'motorcycle',
+  'commercial',
+  'trailer',
+  'government',
+  'military',
+  'disability',
+  'antique',
+  'farm',
+  'specialty',
+  'transporter',
+  'manufacturer',
+  'diplomatic',
+  'apprentice',
+  'rental',
+] as const;
+
+export type PlateType = (typeof PLATE_TYPES)[number];
+
 export type CreatePlateFields = {
   state: string;
   plate_number: string;
@@ -32,6 +55,7 @@ export type CreatePlateFields = {
   year?: string | number | null;
   color?: string;
   body_type?: string;
+  plate_types?: string[];
 };
 
 export type CreatePlateImageFields = {
@@ -82,6 +106,7 @@ export async function createPlateWithImage(
     year: Number.isFinite(year as number) ? year : undefined,
     color: fields.color || undefined,
     body_type: fields.body_type || 'other',
+    plate_types: fields.plate_types?.length ? fields.plate_types : undefined,
   });
 
   const plate = plateRes.plate as CreatedPlate;

@@ -20,6 +20,7 @@ import {
   US_STATES,
   createPlateWithImage,
 } from '@/lib/create-plate';
+import { PlateTypesMultiSelect } from '@/components/beepcred/plate-types-multi-select';
 
 export function SubmitPage() {
   const navigate = useNavigate();
@@ -31,6 +32,7 @@ export function SubmitPage() {
   const [year, setYear] = useState('');
   const [color, setColor] = useState('');
   const [bodyType, setBodyType] = useState('other');
+  const [plateTypes, setPlateTypes] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
   const [shotType, setShotType] = useState('plate');
   const [city, setCity] = useState('');
@@ -48,6 +50,7 @@ export function SubmitPage() {
           year,
           color,
           body_type: bodyType,
+          plate_types: plateTypes,
         },
         { file, caption, shot_type: shotType, city },
       );
@@ -146,6 +149,7 @@ export function SubmitPage() {
                 </SelectContent>
               </Select>
             </div>
+            <PlateTypesMultiSelect value={plateTypes} onChange={setPlateTypes} />
             <div className="space-y-2">
               <Label>Caption</Label>
               <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} />

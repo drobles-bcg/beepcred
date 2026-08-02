@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '@/api/http';
 import { PlateBadge } from '@/components/beepcred/plate-badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -104,6 +105,7 @@ export function PlatePage() {
         model: string | null;
         year: number | null;
         color: string | null;
+        plate_types?: string[] | null;
         first_seen_at: string | null;
         last_seen_at: string | null;
         primary_image_id: string | null;
@@ -366,6 +368,15 @@ export function PlatePage() {
                 <CardTitle className="text-lg">
                   {[p.year, p.color, p.make, p.model].filter(Boolean).join(' · ') || 'Vehicle details unknown'}
                 </CardTitle>
+                {Array.isArray(p.plate_types) && p.plate_types.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {p.plate_types.map((t) => (
+                      <Badge key={t} variant="secondary" className="capitalize">
+                        {t.replace(/_/g, ' ')}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
                 <p className="text-sm text-muted-foreground">
                   First seen {p.first_seen_at ? formatDistanceToNow(new Date(p.first_seen_at), { addSuffix: true }) : '—'}{' '}
                   · Last seen{' '}

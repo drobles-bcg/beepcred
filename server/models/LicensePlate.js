@@ -48,6 +48,29 @@ module.exports = (sequelize) => {
         type: DataTypes.ENUM(...BODY_TYPES),
         defaultValue: 'other',
       },
+      /** JSON array of specialty plate categories, e.g. ["dealer","vanity"] */
+      plate_types: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() {
+          const raw = this.getDataValue('plate_types');
+          if (!raw) return [];
+          try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        },
+        set(value) {
+          if (value == null || value === '') {
+            this.setDataValue('plate_types', null);
+            return;
+          }
+          const list = Array.isArray(value) ? value : [];
+          this.setDataValue('plate_types', list.length ? JSON.stringify(list) : null);
+        },
+      },
       primary_image_id: {
         type: DataTypes.UUID,
         allowNull: true,
@@ -87,5 +110,6 @@ module.exports = (sequelize) => {
   );
 
   LicensePlate.BODY_TYPES = BODY_TYPES;
+  LicensePlate.PLATE_TYPES = require('../lib/plateTypes').PLATE_TYPES;
   return LicensePlate;
 };

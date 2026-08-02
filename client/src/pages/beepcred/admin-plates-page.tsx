@@ -31,6 +31,7 @@ import {
   SHOT_TYPES,
   createPlateWithImage,
 } from '@/lib/create-plate';
+import { PlateTypesMultiSelect } from '@/components/beepcred/plate-types-multi-select';
 
 type AdminPlate = {
   id: string;
@@ -45,6 +46,7 @@ type AdminPlate = {
   color: string | null;
   body_type: string;
   cred_score: number;
+  plate_types?: string[] | null;
   plus_count?: number;
   minus_count?: number;
   view_count?: number;
@@ -69,6 +71,7 @@ type PlateFormState = {
   color: string;
   body_type: string;
   cred_score: string;
+  plate_types: string[];
   caption: string;
   shot_type: string;
   city: string;
@@ -85,6 +88,7 @@ const emptyForm = (): PlateFormState => ({
   color: '',
   body_type: 'other',
   cred_score: '0',
+  plate_types: [],
   caption: '',
   shot_type: 'plate',
   city: '',
@@ -102,6 +106,7 @@ function formFromPlate(p: AdminPlate): PlateFormState {
     color: p.color || '',
     body_type: p.body_type || 'other',
     cred_score: String(p.cred_score ?? 0),
+    plate_types: Array.isArray(p.plate_types) ? [...p.plate_types] : [],
     caption: '',
     shot_type: 'plate',
     city: '',
@@ -172,6 +177,7 @@ export function AdminPlatesPage() {
           color: form.color || null,
           body_type: form.body_type || 'other',
           cred_score: form.cred_score,
+          plate_types: form.plate_types,
         };
         const { data } = await api.put(`/api/admin/plates/${editing.id}`, payload);
         if (file) {
@@ -201,6 +207,7 @@ export function AdminPlatesPage() {
             year: form.year,
             color: form.color,
             body_type: form.body_type || 'other',
+            plate_types: form.plate_types,
           },
           {
             file,
@@ -222,13 +229,17 @@ export function AdminPlatesPage() {
           color: form.color || null,
           body_type: form.body_type || 'other',
           cred_score: form.cred_score,
+          plate_types: form.plate_types,
         });
         plate = data.plate as AdminPlate;
       }
 
       const cred = parseInt(form.cred_score, 10);
-      if (file && Number.isFinite(cred) && cred !== 0) {
-        const { data } = await api.put(`/api/admin/plates/${plate.id}`, { cred_score: cred });
+      if (file && (form.plate_types.length || (Number.isFinite(cred) && cred !== 0))) {
+        const { data } = await api.put(`/api/admin/plates/${plate.id}`, {
+          cred_score: Number.isFinite(cred) ? cred : undefined,
+          plate_types: form.plate_types,
+        });
         return data.plate as AdminPlate;
       }
 
@@ -374,9 +385,20 @@ export function AdminPlatesPage() {
                     </TableCell>
                     <TableCell className="max-w-[14rem] truncate text-sm">{vehicleLabel(p)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {p.body_type || 'other'}
-                      </Badge>
+                      <div className="space-y-1">
+                        <Badge variant="outline" className="capitalize">
+                          {p.body_type || 'other'}
+                        </Badge>
+                        {Array.isArray(p.plate_types) && p.plate_types.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {p.plate_types.map((t) => (
+                              <Badge key={t} variant="secondary" className="capitalize text-[10px]">
+                                {t.replace(/_/g, ' ')}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{p.cred_score}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -540,6 +562,11 @@ export function AdminPlatesPage() {
                 />
               </div>
             </div>
+            <PlateTypesMultiSelect
+              idPrefix={editing ? 'edit-plate-type' : 'create-plate-type'}
+              value={form.plate_types}
+              onChange={(plate_types) => setForm((f) => ({ ...f, plate_types }))}
+            />
             {file && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">

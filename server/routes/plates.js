@@ -24,6 +24,10 @@ const {
 const { isUUID } = require('../lib/uuid');
 const { recalcPlateVoteAggregates, recalcUserCred } = require('../services/cred');
 const { analyzePlateImageWithOpenAI, resolveImageAbsoluteUrl } = require('../lib/plateVisionOpenAi');
+const {
+  normalizePlateTypes,
+  mergePlateTypes,
+} = require('../lib/plateTypes');
 
 const router = express.Router();
 
@@ -142,13 +146,26 @@ router.post('/', requireAuth, async (req, res, next) => {
         year: req.body.year ? parseInt(req.body.year, 10) : null,
         color: req.body.color || null,
         body_type: req.body.body_type || 'other',
+        plate_types: normalizePlateTypes(req.body.plate_types),
         first_seen_at: now,
         last_seen_at: now,
       });
       return res.status(201).json({ plate: plateJson(plate), created: true });
     }
+    const updates = {};
     if (!plate.display_plate_text && display_plate_text) {
-      await plate.update({ display_plate_text });
+      updates.display_plate_text = display_plate_text;
+    }
+    const incomingTypes = normalizePlateTypes(req.body.plate_types);
+    if (incomingTypes.length) {
+      const merged = mergePlateTypes(plate.getDataValue('plate_types'), incomingTypes);
+      const current = normalizePlateTypes(plate.plate_types);
+      if (JSON.stringify(merged) !== JSON.stringify(current)) {
+        updates.plate_types = merged;
+      }
+    }
+    if (Object.keys(updates).length) {
+      await plate.update(updates);
     }
     return res.json({ plate: plateJson(plate), created: false });
   } catch (e) {

@@ -46,6 +46,14 @@ async function migrate() {
       console.log('Added column: plate_images.ai_vision_at');
     }
 
+    if (!plates.plate_types) {
+      await qi.addColumn('license_plates', 'plate_types', {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      });
+      console.log('Added column: license_plates.plate_types');
+    }
+
     const users = await qi.describeTable('users');
     if (!users.google_id) {
       await qi.addColumn('users', 'google_id', {

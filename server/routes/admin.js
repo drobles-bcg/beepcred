@@ -11,6 +11,7 @@ const {
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireAdmin } = require('../middleware/requireAdmin');
 const { isUUID } = require('../lib/uuid');
+const { normalizePlateTypes } = require('../lib/plateTypes');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -359,6 +360,7 @@ router.post('/plates', async (req, res, next) => {
       color,
       body_type = 'other',
       cred_score,
+      plate_types,
     } = req.body || {};
 
     const num = normalizePlateNumber(plate_number);
@@ -390,6 +392,7 @@ router.post('/plates', async (req, res, next) => {
       year: Number.isFinite(yearNum) ? yearNum : null,
       color: color || null,
       body_type: bodyType,
+      plate_types: normalizePlateTypes(plate_types),
       cred_score: Number.isFinite(scoreNum) ? scoreNum : 0,
       first_seen_at: new Date(),
       last_seen_at: new Date(),
@@ -424,6 +427,7 @@ router.put('/plates/:id', async (req, res, next) => {
       color,
       body_type,
       cred_score,
+      plate_types,
     } = req.body || {};
 
     const updates = {};
@@ -464,6 +468,9 @@ router.put('/plates/:id', async (req, res, next) => {
     if (body_type !== undefined) {
       const allowedBody = LicensePlate.BODY_TYPES || [];
       updates.body_type = allowedBody.includes(body_type) ? body_type : plate.body_type;
+    }
+    if (plate_types !== undefined) {
+      updates.plate_types = normalizePlateTypes(plate_types);
     }
     if (cred_score !== undefined) {
       const score = parseInt(cred_score, 10);
