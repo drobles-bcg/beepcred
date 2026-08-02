@@ -1,5 +1,7 @@
 # BeepCred deploy
 
+Repo: **https://github.com/drobles-bcg/beepcred**
+
 Production host: **beepcred.danieljrobles.com** → Apache reverse-proxy → PM2 `beepcred` on `127.0.0.1:3010`.
 
 ## Server path
@@ -27,13 +29,14 @@ Install the dedicated vhost from the portfolio repo:
 
 ```bash
 sudo cp /opt/bitnami/apache/htdocs/infra/apache/beepcred.conf \
-  /opt/bitnami/apache/conf/vhosts/beepcred.conf
-# Ensure this file is included before project-subdomains.conf so exact ServerName wins.
+  /opt/bitnami/apache/conf/vhosts/00-beepcred.conf
 sudo /opt/bitnami/apache/bin/httpd -t
 sudo /opt/bitnami/ctlscript.sh restart apache
 ```
 
 Requires `proxy` / `proxy_http` modules.
+
+**Do not** leave a global `ProxyPass /api/` in `httpd.conf` pointing at the main site backend — it steals BeepCred’s `/api`. Keep `/api` proxy only on `danieljrobles.conf`.
 
 ## PM2
 
@@ -58,4 +61,4 @@ Seed users: `admin` / `mod` / `user` (password = username).
 
 ## CI
 
-Push to `main` runs **Deploy BeepCred** (rsync → install → build → PM2 reload).
+Push to `main` runs **Deploy BeepCred**: build the Vite client on GitHub Actions (Lightsail is too small), rsync including `client/dist`, install server deps, PM2 reload.

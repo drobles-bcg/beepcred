@@ -18,6 +18,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Install and build client (CI — Lightsail is too small for Vite)
+        run: |
+          npm install --omit=dev
+          (cd server && npm install --omit=dev)
+          (cd client && npm install)
+          (cd client && npm run build)
+
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -26,7 +42,7 @@ jobs:
           chmod 600 ~/.ssh/lightsail.pem
           ssh-keyscan -H "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Rsync to Lightsail
+      - name: Rsync to Lightsail (includes client/dist)
         env:
           DEPLOY_HOST: ${{ secrets.LIGHTSAIL_HOST }}
           DEPLOY_USER: ${{ secrets.LIGHTSAIL_USER }}
@@ -35,7 +51,7 @@ jobs:
           RSYNC_SSH='ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30'
           DEST="${DEPLOY_USER}@${DEPLOY_HOST}:${APP_DIR}"
           ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${APP_DIR}"
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "sudo mkdir -p ${APP_DIR} && sudo chown ${DEPLOY_USER}:${DEPLOY_USER} ${APP_DIR}"
           for attempt in 1 2 3 4 5; do
             echo "rsync attempt $attempt → ${APP_DIR}..."
             if rsync -avz -e "$RSYNC_SSH" \
@@ -48,7 +64,6 @@ jobs:
               --exclude 'server/db/*.sqlite-*' \
               --exclude 'server/uploads/*' \
               --include 'server/uploads/.gitkeep' \
-              --exclude 'client/dist' \
               --exclude '.DS_Store' \
               --exclude '*.log' \
               ./ "${DEST}/"; then
@@ -58,7 +73,7 @@ jobs:
             sleep 20
           done
 
-      - name: Install, build, migrate if needed, restart PM2
+      - name: Install server deps, migrate if needed, restart PM2
         env:
           DEPLOY_HOST: ${{ secrets.LIGHTSAIL_HOST }}
           DEPLOY_USER: ${{ secrets.LIGHTSAIL_USER }}
@@ -70,23 +85,18 @@ jobs:
           cd "$APP_DIR"
 
           if [ ! -f .env ]; then
-            echo "Missing .env — creating from example (change SESSION_SECRET after deploy)"
+            echo "Missing .env — creating from example"
             cp .env.example .env
             sed -i 's/^NODE_ENV=.*/NODE_ENV=production/' .env
             sed -i 's|^CLIENT_ORIGIN=.*|CLIENT_ORIGIN=https://beepcred.danieljrobles.com|' .env
             sed -i 's|^VITE_API_URL=.*|VITE_API_URL=|' .env
-            # Generate a session secret if still default
             if grep -q 'beepcred-local-dev-secret' .env; then
               SECRET=$(openssl rand -hex 32)
               sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${SECRET}|" .env
             fi
           fi
 
-          npm install --omit=dev
           (cd server && npm install --omit=dev)
-          (cd client && npm install)
-
-          npm run build
 
           if [ ! -f server/db/database.sqlite ]; then
             echo "First-time DB: migrate + seed"
