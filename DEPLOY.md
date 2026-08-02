@@ -59,6 +59,16 @@ npm run db:seed
 
 Seed users: `admin` / `mod` / `user` (password = username).
 
-## CI
+## Google Sign-In
 
-Push to `main` runs **Deploy BeepCred**: build the Vite client on GitHub Actions (Lightsail is too small), rsync including `client/dist`, install server deps, PM2 reload.
+1. Google Cloud Console → APIs & Services → Credentials → Create **OAuth client ID** (Web application).
+2. Authorized JavaScript origins:
+   - `https://beepcred.danieljrobles.com`
+   - `http://localhost:5180` (local Vite)
+3. On the server, set in `/opt/bitnami/apps/beepcred/.env`:
+
+```
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+4. Redeploy / `pm2 restart beepcred`. The Sign in with Google button appears when this is set.

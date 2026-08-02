@@ -1,5 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const { OAuth2Client } = require('google-auth-library');
+const { Op } = require('sequelize');
 const { User } = require('../db');
 
 const router = express.Router();
@@ -11,6 +13,105 @@ function publicUser(u) {
   delete j.password_hash;
   return j;
 }
+
+function googleClientId() {
+  return (process.env.GOOGLE_CLIENT_ID || '').trim();
+}
+
+function slugifyUsername(base) {
+  const cleaned = String(base || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 24);
+  return cleaned.length >= 2 ? cleaned : 'user';
+}
+
+async function uniqueUsername(preferred) {
+  let base = slugifyUsername(preferred);
+  let candidate = base;
+  let n = 0;
+  while (await User.findOne({ where: { username: candidate } })) {
+    n += 1;
+    candidate = `${base}${n}`.slice(0, 64);
+  }
+  return candidate;
+}
+
+router.get('/google/config', (_req, res) => {
+  const clientId = googleClientId();
+  if (!clientId) {
+    return res.json({ enabled: false });
+  }
+  res.json({ enabled: true, clientId });
+});
+
+router.post('/google', async (req, res, next) => {
+  try {
+    const clientId = googleClientId();
+    if (!clientId) {
+      return res.status(503).json({ error: 'Google sign-in is not configured' });
+    }
+    const { credential } = req.body || {};
+    if (!credential || typeof credential !== 'string') {
+      return res.status(400).json({ error: 'credential required' });
+    }
+
+    const client = new OAuth2Client(clientId);
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: clientId,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.sub || !payload.email) {
+      return res.status(401).json({ error: 'Invalid Google token' });
+    }
+    if (payload.email_verified === false) {
+      return res.status(401).json({ error: 'Google email is not verified' });
+    }
+
+    const googleId = payload.sub;
+    const email = String(payload.email).trim().toLowerCase();
+    const displayName = payload.name || email.split('@')[0];
+    const avatarUrl = payload.picture || null;
+
+    let user = await User.findOne({ where: { google_id: googleId } });
+    if (!user) {
+      user = await User.findOne({ where: { email } });
+      if (user) {
+        await user.update({
+          google_id: googleId,
+          avatar_url: user.avatar_url || avatarUrl,
+          display_name: user.display_name || displayName,
+          last_active_at: new Date(),
+        });
+      } else {
+        const username = await uniqueUsername(email.split('@')[0]);
+        // Empty string = Google-only account (works with SQLite NOT NULL columns)
+        user = await User.create({
+          username,
+          email,
+          password_hash: '',
+          google_id: googleId,
+          display_name: displayName,
+          avatar_url: avatarUrl,
+          last_active_at: new Date(),
+        });
+      }
+    } else {
+      await user.update({ last_active_at: new Date() });
+    }
+
+    if (user.is_banned) {
+      return res.status(401).json({ error: 'Account is banned' });
+    }
+
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    res.json({ user: publicUser(user) });
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.post('/register', async (req, res, next) => {
   try {
@@ -24,7 +125,7 @@ router.post('/register', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid username or email' });
     }
     const existing = await User.findOne({
-      where: { [require('sequelize').Op.or]: [{ username: uname }, { email: em }] },
+      where: { [Op.or]: [{ username: uname }, { email: em }] },
     });
     if (existing) {
       return res.status(409).json({ error: 'Username or email already taken' });
@@ -55,6 +156,9 @@ router.post('/login', async (req, res, next) => {
     const user = await User.findOne({ where: { username: uname } });
     if (!user || user.is_banned) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'Use Google to sign in to this account' });
     }
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) {

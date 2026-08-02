@@ -46,6 +46,19 @@ async function migrate() {
       console.log('Added column: plate_images.ai_vision_at');
     }
 
+    const users = await qi.describeTable('users');
+    if (!users.google_id) {
+      await qi.addColumn('users', 'google_id', {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        unique: true,
+      });
+      console.log('Added column: users.google_id');
+    }
+    // SQLite cannot easily ALTER NOT NULL → NULL; recreate not needed for Sequelize sync.
+    // Existing password_hash NOT NULL remains; OAuth users store empty string if needed.
+    // Prefer empty string fallback when column still NOT NULL on older DBs — handled in auth route.
+
     console.log('Database migration checks complete.');
     process.exit(0);
   } catch (err) {

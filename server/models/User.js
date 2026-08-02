@@ -21,7 +21,12 @@ module.exports = (sequelize) => {
       },
       password_hash: {
         type: DataTypes.STRING(255),
-        allowNull: false,
+        allowNull: true,
+      },
+      google_id: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        unique: true,
       },
       display_name: DataTypes.STRING(128),
       bio: DataTypes.TEXT,

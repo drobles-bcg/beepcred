@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { api } from '@/api/http';
+import { AuthShell } from '@/components/beepcred/auth-shell';
+import { GoogleAuthButton } from '@/components/beepcred/google-auth-button';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,19 +14,43 @@ import { Helmet } from 'react-helmet-async';
 export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [googleError, setGoogleError] = useState('');
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get('next') || '/';
   const qc = useQueryClient();
+
+  const finishLogin = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ['auth', 'me'] });
+    navigate(next, { replace: true });
+  }, [navigate, next, qc]);
 
   const login = useMutation({
     mutationFn: async () => {
       const { data } = await api.post('/api/auth/login', { username, password });
       return data.user;
     },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['auth', 'me'] });
-      navigate(next, { replace: true });
+    onSuccess: () => {
+      void finishLogin();
+    },
+  });
+
+  const googleLogin = useMutation({
+    mutationFn: async (credential: string) => {
+      const { data } = await api.post('/api/auth/google', { credential });
+      return data.user;
+    },
+    onSuccess: () => {
+      setGoogleError('');
+      void finishLogin();
+    },
+    onError: (err) => {
+      if (axios.isAxiosError(err)) {
+        const body = err.response?.data as { error?: string } | undefined;
+        setGoogleError(body?.error || 'Google sign-in failed');
+        return;
+      }
+      setGoogleError('Google sign-in failed');
     },
   });
 
@@ -44,18 +70,38 @@ export function LoginPage() {
     return err instanceof Error ? err.message : 'Sign-in failed';
   }
 
+  const googleMutate = googleLogin.mutate;
+  const onGoogleCredential = useCallback(
+    (credential: string) => {
+      googleMutate(credential);
+    },
+    [googleMutate]
+  );
+
   return (
     <>
       <Helmet>
         <title>Sign in — BeepCred</title>
       </Helmet>
-      <div className="flex min-h-[calc(100vh-120px)] items-center justify-center p-4">
+      <AuthShell>
         <Card className="w-full max-w-md">
-          <CardHeader>
+          <CardHeader className="flex-col items-start gap-1 py-5">
             <CardTitle>Sign in</CardTitle>
             <CardDescription>Welcome back to BeepCred</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <GoogleAuthButton
+              onCredential={onGoogleCredential}
+              disabled={googleLogin.isPending || login.isPending}
+            />
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="user">Username</Label>
               <Input
@@ -73,15 +119,18 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') login.mutate();
+                }}
               />
             </div>
-            {login.isError && (
-              <p className="text-sm text-destructive">{loginErrorMessage()}</p>
+            {(login.isError || googleError) && (
+              <p className="text-sm text-destructive">{googleError || loginErrorMessage()}</p>
             )}
             <Button
               className="w-full"
               onClick={() => login.mutate()}
-              disabled={login.isPending}
+              disabled={login.isPending || googleLogin.isPending}
             >
               {login.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
@@ -93,7 +142,7 @@ export function LoginPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </AuthShell>
     </>
   );
 }
