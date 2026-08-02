@@ -106,6 +106,8 @@ module.exports = (sequelize) => {
       tableName: 'license_plates',
       underscored: true,
       timestamps: true,
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
     }
   );
 

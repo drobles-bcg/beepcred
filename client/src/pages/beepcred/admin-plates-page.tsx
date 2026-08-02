@@ -53,6 +53,7 @@ type AdminPlate = {
   view_count?: number;
   comment_count?: number;
   created_at: string;
+  createdAt?: string;
   last_seen_at?: string | null;
   primaryImage?: {
     id: string;
@@ -403,7 +404,7 @@ export function AdminPlatesPage() {
                     </TableCell>
                     <TableCell>{p.cred_score}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(p.created_at)}
+                      {formatDate(p.created_at || p.createdAt)}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
