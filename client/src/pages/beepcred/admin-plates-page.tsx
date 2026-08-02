@@ -147,6 +147,7 @@ export function AdminPlatesPage() {
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AdminPlate | null>(null);
+  const [previewPlate, setPreviewPlate] = useState<AdminPlate | null>(null);
 
   const platesQuery = useQuery({
     queryKey: ['admin', 'plates', q, stateFilter],
@@ -361,13 +362,22 @@ export function AdminPlatesPage() {
               )}
               {plates.map((p) => {
                 const thumb = p.primaryImage?.thumbnail_url || p.primaryImage?.image_url;
+                const full = p.primaryImage?.image_url || thumb;
                 return (
                   <TableRow key={p.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="size-12 overflow-hidden rounded-md border border-border bg-muted">
-                          {thumb ? (
-                            <img src={thumb} alt="" className="size-full object-cover" />
+                          {thumb && full ? (
+                            <button
+                              type="button"
+                              className="size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              onClick={() => setPreviewPlate(p)}
+                              title="View full image"
+                              aria-label={`View photo for ${p.state} ${p.display_plate_text || p.plate_number}`}
+                            >
+                              <img src={thumb} alt="" className="size-full object-cover" />
+                            </button>
                           ) : (
                             <div className="flex size-full items-center justify-center text-[10px] text-muted-foreground">
                               No img
@@ -611,6 +621,38 @@ export function AdminPlatesPage() {
               {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create plate'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewPlate} onOpenChange={(open) => !open && setPreviewPlate(null)}>
+        <DialogContent
+          variant="fullscreen"
+          className="flex max-h-[calc(100vh-2.5rem)] max-w-[calc(100vw-2.5rem)] flex-col gap-3 overflow-hidden p-4 sm:p-5"
+        >
+          <DialogHeader className="shrink-0 pr-8">
+            <DialogTitle>
+              {previewPlate
+                ? `${previewPlate.state} ${previewPlate.display_plate_text || previewPlate.plate_number}`
+                : 'Plate photo'}
+            </DialogTitle>
+            <DialogDescription>
+              {previewPlate ? vehicleLabel(previewPlate) : 'Full-size plate photo'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md bg-muted/40">
+            {previewPlate?.primaryImage?.image_url ||
+            previewPlate?.primaryImage?.thumbnail_url ? (
+              <img
+                src={
+                  previewPlate.primaryImage.image_url ||
+                  previewPlate.primaryImage.thumbnail_url ||
+                  ''
+                }
+                alt={`${previewPlate.state} ${previewPlate.display_plate_text || previewPlate.plate_number}`}
+                className="max-h-full max-w-full object-contain"
+              />
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
 
