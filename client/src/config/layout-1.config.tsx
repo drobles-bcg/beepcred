@@ -92,7 +92,7 @@ export function getAccountSidebarChildren(username: string): MenuConfig {
     { title: 'My ratings', path: '/account/ratings' },
     { title: 'My comments', path: '/account/comments' },
     { title: 'My reports', path: '/account/reports' },
-    { title: 'My garage', path: '/account/garage', disabled: true },
+    { title: 'My garage', path: '/account/garage' },
     { title: 'Following', path: '/account/following', disabled: true },
     { title: 'Public profile', path: `/user/${encodeURIComponent(username)}` },
   ];

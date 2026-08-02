@@ -64,6 +64,9 @@ export function BeepCredUserMenu() {
           <Link to="/account/reports">My reports</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
+          <Link to="/account/garage">My garage</Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
           <Link to={`/user/${encodeURIComponent(user.username)}`}>Public profile</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

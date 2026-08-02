@@ -29,7 +29,7 @@ const SECTIONS: NavSection[] = [
   {
     heading: 'Garage',
     items: [
-      { to: '/account/garage', label: 'Cars I own', soon: true },
+      { to: '/account/garage', label: 'Cars I own' },
     ],
   },
   {

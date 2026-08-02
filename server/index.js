@@ -14,6 +14,7 @@ const searchRoutes = require('./routes/search');
 const reportsRoutes = require('./routes/reports');
 const adminRoutes = require('./routes/admin');
 const imagesRoutes = require('./routes/images');
+const garageRoutes = require('./routes/garage');
 
 const app = express();
 const PORT = process.env.PORT || 3010;
@@ -62,6 +63,7 @@ app.use('/api/search', searchRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/images', imagesRoutes);
+app.use('/api/garage', garageRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

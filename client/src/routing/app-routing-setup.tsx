@@ -27,6 +27,8 @@ import { AccountSubmissionsPage } from '@/pages/beepcred/account/account-submiss
 import { AccountRatingsPage } from '@/pages/beepcred/account/account-ratings-page';
 import { AccountCommentsPage } from '@/pages/beepcred/account/account-comments-page';
 import { AccountReportsPage } from '@/pages/beepcred/account/account-reports-page';
+import { AccountGaragePage } from '@/pages/beepcred/account/account-garage-page';
+import { AccountGarageVehiclePage } from '@/pages/beepcred/account/account-garage-vehicle-page';
 
 export function AppRoutingSetup() {
   return (
@@ -55,6 +57,8 @@ export function AppRoutingSetup() {
             <Route path="ratings" element={<AccountRatingsPage />} />
             <Route path="comments" element={<AccountCommentsPage />} />
             <Route path="reports" element={<AccountReportsPage />} />
+            <Route path="garage" element={<AccountGaragePage />} />
+            <Route path="garage/:id" element={<AccountGarageVehiclePage />} />
           </Route>
         </Route>
 
