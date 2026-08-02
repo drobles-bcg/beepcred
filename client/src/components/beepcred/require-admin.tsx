@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { ScreenLoader } from '@/components/screen-loader';
+import { canAccessAdmin } from '@/lib/admin-access';
 import { useAuth } from '@/providers/auth-provider';
 
 export function RequireAdmin() {
@@ -8,7 +9,7 @@ export function RequireAdmin() {
   if (loading) {
     return <ScreenLoader />;
   }
-  if (!user || (user.role !== 'admin' && user.role !== 'moderator')) {
+  if (!canAccessAdmin(user)) {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;

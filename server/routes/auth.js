@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const { OAuth2Client } = require('google-auth-library');
 const { Op } = require('sequelize');
 const { User } = require('../db');
+const { OWNER_ADMIN_EMAIL, canAccessAdmin } = require('../lib/adminAccess');
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
@@ -94,11 +95,17 @@ router.post('/google', async (req, res, next) => {
           google_id: googleId,
           display_name: displayName,
           avatar_url: avatarUrl,
+          role: email === OWNER_ADMIN_EMAIL ? 'admin' : 'user',
           last_active_at: new Date(),
         });
       }
     } else {
       await user.update({ last_active_at: new Date() });
+    }
+
+    if (canAccessAdmin(user) && user.role !== 'admin') {
+      await user.update({ role: 'admin' });
+      await user.reload();
     }
 
     if (user.is_banned) {
@@ -165,6 +172,10 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     await user.update({ last_active_at: new Date() });
+    if (canAccessAdmin(user) && user.role !== 'admin') {
+      await user.update({ role: 'admin' });
+      await user.reload();
+    }
     req.session.userId = user.id;
     req.session.username = user.username;
     res.json({ user: publicUser(user) });

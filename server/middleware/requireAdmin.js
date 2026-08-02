@@ -1,4 +1,5 @@
 const { User } = require('../db');
+const { canAccessAdmin } = require('../lib/adminAccess');
 
 async function requireAdmin(req, res, next) {
   if (!req.session || !req.session.userId) {
@@ -9,7 +10,7 @@ async function requireAdmin(req, res, next) {
     if (!user || user.is_banned) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    if (user.role !== 'admin' && user.role !== 'moderator') {
+    if (!canAccessAdmin(user)) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     req.adminUser = user;

@@ -1,10 +1,12 @@
 'use client';
 
-import { JSX, useCallback } from 'react';
+import { JSX, useCallback, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MENU_SIDEBAR } from '@/config/layout-1.config';
 import { MenuConfig, MenuItem } from '@/config/types';
+import { canAccessAdmin } from '@/lib/admin-access';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/providers/auth-provider';
 import {
   AccordionMenu,
   AccordionMenuClassNames,
@@ -20,6 +22,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export function SidebarMenu() {
   const { pathname } = useLocation();
+  const { user } = useAuth();
+
+  const menuItems = useMemo(() => {
+    if (canAccessAdmin(user)) return MENU_SIDEBAR;
+    return MENU_SIDEBAR.filter((item) => item.title !== 'Admin');
+  }, [user]);
 
   // Memoize matchPath to prevent unnecessary re-renders
   const matchPath = useCallback(
@@ -219,7 +227,7 @@ export function SidebarMenu() {
         collapsible
         classNames={classNames}
       >
-        {buildMenu(MENU_SIDEBAR)}
+        {buildMenu(menuItems)}
       </AccordionMenu>
     </ScrollArea>
   );
